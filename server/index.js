@@ -49,6 +49,8 @@ const HOSTILE_SPAWN_MS  = 4000;
 const HOSTILE_CAP       = 80;
 const HOSTILE_BATCH     = 3;
 
+const RESTART_DELAY_MS  = 30000;
+
 const HOSTILE_ZONES = [
   { cx: 0,   cz: -80, r: 15 },
   { cx: -60, cz: -70, r: 12 },
@@ -75,6 +77,8 @@ const round = {
   pvpStartedAt: 0,
   endedAt: 0,
   winnerId: null,
+  // Epoch ms at which an ended round auto-resets. 0 when not pending.
+  restartAt: 0,
   // Number of consecutive state ticks with zero total hostiles across clients.
   clearTicks: 0,
   // How long PvE has continued after fog reached the minimum radius.
@@ -112,10 +116,35 @@ function startNewRound() {
   round.pvpStartedAt = 0;
   round.endedAt = 0;
   round.winnerId = null;
+  round.restartAt = 0;
   round.clearTicks = 0;
   round.pveOvertime = 0;
   hostilesByPlayer.clear();
   deadThisRound.clear();
+}
+
+// Called RESTART_DELAY_MS after endRound. Wipes per-round progression
+// (souls + allies) for every player (connected and offline), restores hp
+// on still-connected generals, and flips phase back to pve. Dead players'
+// clients re-join in response to the phase flip; their deadThisRound entry
+// is cleared by startNewRound().
+function resetRound() {
+  // Clear per-round progression in the DB so dead-and-rejoining players
+  // enter the next round with the same clean slate as survivors.
+  db.default.exec('UPDATE players SET souls = 0');
+  db.default.exec('DELETE FROM allies');
+
+  // Reset surviving (connected) players' in-memory state.
+  for (const p of players.values()) {
+    p.hp = p.maxHp;
+    p.souls = 0;
+    p.allies.clear();
+    p.pos = { x: 0, z: 0 };
+  }
+
+  startNewRound();
+  io.to(ROOM).emit('round_restarted', { t: Date.now() });
+  console.log('[round] reset — new round begins');
 }
 
 function transitionToPvp() {
@@ -129,9 +158,10 @@ function endRound(winnerId) {
   if (round.phase === 'ended') return;
   round.phase = 'ended';
   round.endedAt = Date.now();
+  round.restartAt = round.endedAt + RESTART_DELAY_MS;
   round.winnerId = winnerId;
-  io.to(ROOM).emit('round_ended', { winnerId, t: round.endedAt });
-  console.log(`[round] winner = ${winnerId || '(none)'}`);
+  io.to(ROOM).emit('round_ended', { winnerId, t: round.endedAt, restartAt: round.restartAt });
+  console.log(`[round] winner = ${winnerId || '(none)'} — next round in ${RESTART_DELAY_MS / 1000}s`);
 }
 
 function serializeRound() {
@@ -144,6 +174,7 @@ function serializeRound() {
     startedAt:      round.startedAt,
     pvpStartedAt:   round.pvpStartedAt,
     winnerId:       round.winnerId,
+    restartAt:      round.restartAt,
     aliveGenerals:  activeGeneralCount(),
   };
 }
@@ -751,7 +782,12 @@ setInterval(() => {
 }, TICK_MS);
 
 function tickRound(dt) {
-  if (round.phase === 'ended') return;
+  if (round.phase === 'ended') {
+    if (round.restartAt && Date.now() >= round.restartAt) {
+      resetRound();
+    }
+    return;
+  }
 
   if (round.phase === 'pve') {
     round.fogRadius = computeFogRadius();

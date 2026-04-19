@@ -180,6 +180,7 @@ const roundState = {
   startedAt: Date.now(),
   pvpStartedAt: 0,
   winnerId: null,
+  restartAt: 0,
   aliveGenerals: 1,
   ended: false,
 };
@@ -314,7 +315,11 @@ function onServerReady(data) {
     battleDirector._seeded = true;
   }
 
-  hud.showLockPrompt(true);
+  // Only show the "click to enter" prompt if pointer lock isn't already held.
+  // On the initial welcome it isn't; on a mid-session rejoin (round restart)
+  // it usually is, in which case forcing the prompt would make survivors
+  // click unnecessarily.
+  if (!player.controls.isLocked) hud.showLockPrompt(true);
 
   // Broadcast our allies so other connected players can see them
   setTimeout(() => broadcastAllyState(), 100);
@@ -361,9 +366,13 @@ events.subscribe(GameEvent.NET_STATE_TICK, ({ players: serverPlayers, round: ser
     roundState.startedAt = serverRound.startedAt;
     roundState.pvpStartedAt = serverRound.pvpStartedAt;
     roundState.winnerId = serverRound.winnerId;
+    roundState.restartAt = serverRound.restartAt ?? 0;
     roundState.aliveGenerals = serverRound.aliveGenerals;
     if (!wasEnded && roundState.phase === 'ended') {
-      events.emit(GameEvent.NET_ROUND_ENDED, { winnerId: serverRound.winnerId });
+      events.emit(GameEvent.NET_ROUND_ENDED, { winnerId: serverRound.winnerId, restartAt: serverRound.restartAt });
+    }
+    if (wasEnded && roundState.phase === 'pve') {
+      onRoundRestarted();
     }
     battlefield.setFogRadius(roundState.fogRadius);
   }
@@ -478,7 +487,10 @@ events.subscribe(GameEvent.PLAYER_DIED, () => {
   if (_playerDeathReported) return;
   _playerDeathReported = true;
   player.alive = false;
-  if (player.controls.isLocked) player.controls.unlock();
+  // Keep pointer lock active through spectator/restart so the player doesn't
+  // have to click "enter battle" again when the round auto-restarts. Movement
+  // and firing are already gated by `player.alive`, so the camera becomes a
+  // mouse-look spectator view with no other input.
   if (net) net.sendPlayerDied(null);
 });
 
@@ -594,6 +606,39 @@ function broadcastAllyState() {
   }
   if (myAllies.length === 0) return;
   net.sendAllyState(myAllies, Date.now());
+}
+
+// Called when the server flips phase from `ended` back to `pve` (30s after
+// a winner is declared). Wipes local per-round state and re-emits `join` so
+// the server sends fresh `restore_state` with souls=0 and no persisted allies.
+function onRoundRestarted() {
+  for (const s of skeletons) {
+    if (s.mesh) scene.remove(s.mesh);
+  }
+  skeletons.length = 0;
+  remoteAllies.clear();
+
+  for (const p of projectiles) {
+    if (p.mesh) scene.remove(p.mesh);
+    if (typeof p.dispose === 'function') p.dispose();
+  }
+  projectiles.length = 0;
+
+  player.alive = true;
+  player.stats.setHp(player.stats.maxHp);
+  player.stats.energy = player.stats.maxEnergy;
+  const sp = battleConfig.playerSpawnPoint;
+  player.position.set(sp[0], 0, sp[2]);
+  player.controls.getObject().position.set(sp[0], 1.7, sp[2]);
+  _playerDeathReported = false;
+  localKills = 0;
+  nextLocalAllyId = 1;
+
+  battleDirector._seeded = false;
+  battleDirector._hostileSpawnTimer = battleConfig.hostileSpawnInterval;
+  battleDirector._allyReinforceTimer = battleConfig.allyReinforcementInterval;
+
+  if (net) net.rejoin();
 }
 
 // ── Frame loop ─────────────────────────────────────────────────────────────

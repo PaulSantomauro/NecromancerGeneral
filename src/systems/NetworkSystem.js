@@ -126,4 +126,9 @@ export class NetworkSystem {
       killedBy: killedBy || null,
     });
   }
+
+  rejoin() {
+    if (!this.connected) return;
+    this.socket.emit('join', { playerId: this.playerId, name: this._name });
+  }
 }

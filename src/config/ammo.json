@@ -23,8 +23,8 @@
     "maxRange": 60,
     "arc": false,
     "category": "magic",
-    "energyCost": 28,
-    "soulCost": 2
+    "energyCost": 0,
+    "soulCost": 1
   },
   "summon_bolt": {
     "key": "summon_bolt",
@@ -40,7 +40,7 @@
     "flightTime": 0.5,
     "category": "summon",
     "summonType": "skeleton",
-    "energyCost": 42,
+    "energyCost": 0,
     "soulCost": 3
   },
   "summon_runner": {
@@ -57,7 +57,7 @@
     "flightTime": 0.45,
     "category": "summon",
     "summonType": "runner",
-    "energyCost": 32,
+    "energyCost": 0,
     "soulCost": 2
   },
   "summon_brute": {
@@ -74,7 +74,7 @@
     "flightTime": 0.6,
     "category": "summon",
     "summonType": "brute",
-    "energyCost": 64,
+    "energyCost": 0,
     "soulCost": 6
   },
   "summon_stalker": {
@@ -91,7 +91,7 @@
     "flightTime": 0.5,
     "category": "summon",
     "summonType": "stalker",
-    "energyCost": 48,
+    "energyCost": 0,
     "soulCost": 4
   },
   "summon_giant": {
@@ -108,7 +108,7 @@
     "flightTime": 0.75,
     "category": "summon",
     "summonType": "giant",
-    "energyCost": 120,
+    "energyCost": 0,
     "soulCost": 12
   }
 }

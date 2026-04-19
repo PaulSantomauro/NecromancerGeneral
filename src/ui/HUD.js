@@ -105,23 +105,26 @@ export class HUD {
       this.roundOverlaySub.textContent   = 'Spectating — await the round\u2019s end.';
     });
 
-    events.subscribe(GameEvent.NET_ROUND_ENDED, ({ winnerId, rejoinDenied }) => {
+    events.subscribe(GameEvent.NET_ROUND_ENDED, ({ winnerId, rejoinDenied, restartAt }) => {
       this._winnerShown = true;
+      this._rejoinDenied = !!rejoinDenied;
       this.roundOverlay.classList.remove('hidden');
       if (rejoinDenied) {
         this.roundOverlayTitle.textContent = 'You were killed this round';
-        this.roundOverlaySub.textContent   = 'Rejoin after the round ends to play again.';
         this.roundOverlay.classList.remove('victory');
-        return;
+      } else {
+        const amWinner = winnerId && this._myId && winnerId === this._myId;
+        this._overlayIsWinner = !!amWinner;
+        this.roundOverlay.classList.toggle('victory', !!amWinner);
+        this.roundOverlayTitle.textContent = amWinner
+          ? 'VICTORY · Last general standing'
+          : (winnerId ? 'Round over — another general won' : 'Round over — no winner');
       }
-      const amWinner = winnerId && this._myId && winnerId === this._myId;
-      this.roundOverlay.classList.toggle('victory', !!amWinner);
-      this.roundOverlayTitle.textContent = amWinner
-        ? 'VICTORY · Last general standing'
-        : (winnerId ? 'Round over — another general won' : 'Round over — no winner');
-      this.roundOverlaySub.textContent = amWinner
-        ? 'The battlefield is yours.'
-        : 'Reconnect to start a new round.';
+      // Seed the countdown subtitle so there's no blank frame before _renderRound ticks.
+      const secs = restartAt
+        ? Math.max(0, Math.ceil((restartAt - Date.now()) / 1000))
+        : 30;
+      this.roundOverlaySub.textContent = `New round in ${secs}s`;
     });
 
     this.ammoName.textContent = ammoConfig.machine_gun.name;
@@ -145,6 +148,16 @@ export class HUD {
     if (!rs || !this.roundBanner) return;
 
     if (rs.phase !== this._lastPhase) {
+      // Round restarted — hide the end-of-round overlay and clear flags so
+      // the next death/victory re-populates it cleanly.
+      if (this._lastPhase === 'ended' && rs.phase === 'pve') {
+        this._deathShown = false;
+        this._winnerShown = false;
+        this._rejoinDenied = false;
+        this._overlayIsWinner = false;
+        this.roundOverlay.classList.add('hidden');
+        this.roundOverlay.classList.remove('victory');
+      }
       this.roundBanner.classList.remove('phase-pve', 'phase-pvp', 'phase-ended');
       this.roundBanner.classList.add(`phase-${rs.phase}`);
       this._lastPhase = rs.phase;
@@ -166,6 +179,12 @@ export class HUD {
       this.roundTimerTxt.textContent = `${m}:${s}`;
     } else {
       this.roundTimerTxt.textContent = '--:--';
+    }
+
+    // Countdown for end-of-round restart, displayed in the overlay subtitle.
+    if (rs.phase === 'ended' && rs.restartAt && this._winnerShown) {
+      const secs = Math.max(0, Math.ceil((rs.restartAt - Date.now()) / 1000));
+      this.roundOverlaySub.textContent = `New round in ${secs}s`;
     }
   }
 

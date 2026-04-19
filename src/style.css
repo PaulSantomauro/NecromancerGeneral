@@ -36,10 +36,10 @@ canvas { display: block; }
   backdrop-filter: blur(2px);
 }
 
-/* === Top center: battle counts === */
+/* === Top center: battle counts (sits below the round banner) === */
 #hud-top {
   position: absolute;
-  top: 18px;
+  top: 60px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

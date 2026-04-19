@@ -62,14 +62,21 @@ export class ProgressionSystem {
   }
 
   _overrideUpgrades(upgrades) {
+    // Apply only the delta from the previously-known levels so this is
+    // idempotent across re-joins (e.g. when a round auto-restarts, the
+    // server sends the same levels a second time and we must not re-stack).
+    const prev = { ...this.levels };
     this.levels.empower_self   = upgrades.empower_self   ?? 0;
     this.levels.empower_allies = upgrades.empower_allies ?? 0;
     this.levels.reinforce_cap  = upgrades.reinforce_cap  ?? 0;
 
-    for (let i = 0; i < this.levels.empower_self;   i++) this.playerStats.applyEmpowerSelf();
+    const deltaSelf = Math.max(0, this.levels.empower_self  - prev.empower_self);
+    const deltaCap  = Math.max(0, this.levels.reinforce_cap - prev.reinforce_cap);
+
+    for (let i = 0; i < deltaSelf; i++) this.playerStats.applyEmpowerSelf();
     this.allyTier = this.levels.empower_allies;
     if (this.battleDirector) {
-      for (let i = 0; i < this.levels.reinforce_cap; i++) {
+      for (let i = 0; i < deltaCap; i++) {
         this.battleDirector.maxAllies += 3;
         this.battleDirector.hostileSpawnBatchSize += 1;
       }
