@@ -86,7 +86,7 @@ export class PlayerStats {
   }
 
   takeDamage(amount) {
-    const actual = Math.max(1, amount * (1 - this.damageReduction));
+    const actual = amount * (1 - this.damageReduction);
     this.hp = Math.max(0, this.hp - actual);
     events.emit(GameEvent.PLAYER_DAMAGED, { amount: actual, hp: this.hp, max: this.maxHp });
     if (this.hp <= 0) events.emit(GameEvent.PLAYER_DIED, {});
