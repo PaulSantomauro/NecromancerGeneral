@@ -1,0 +1,32 @@
+{
+  "worldSize": 200,
+  "hostileSpawnZones": [
+    { "center": [0, 0, -80], "radius": 15, "label": "Northern Wastes" },
+    { "center": [-65, 0, -30], "radius": 12, "label": "Western Ruins" },
+    { "center": [65, 0, -30], "radius": 12, "label": "Eastern Pyre" },
+    { "center": [0, 0, 75], "radius": 12, "label": "Southern Graves" },
+    { "center": [-45, 0, -65], "radius": 10, "label": "NW Hilltop" },
+    { "center": [45, 0, -65], "radius": 10, "label": "NE Hilltop" },
+    { "center": [-40, 0, 40], "radius": 10, "label": "SW Outpost" },
+    { "center": [40, 0, 40], "radius": 10, "label": "SE Outpost" }
+  ],
+  "playerSpawnPoint": [0, 0, 0],
+  "battlefieldRadius": 100,
+  "initialHostileCount": 30,
+  "initialAlliedCount": 5,
+  "hostileSpawnInterval": 3.5,
+  "hostileSpawnBatchSize": 2,
+  "maxHostiles": 100,
+  "maxAllies": 40,
+  "allyReinforcementInterval": 20.0,
+  "allyReinforcementThreshold": 5,
+  "allyReinforcementBatchSize": 2,
+  "round": {
+    "fogStartRadius": 95,
+    "fogMinRadius": 10,
+    "fogShrinkSeconds": 300,
+    "fogDamagePerSec": 3,
+    "pveTimeoutSeconds": 60,
+    "hostileCountClearTicks": 2
+  }
+}

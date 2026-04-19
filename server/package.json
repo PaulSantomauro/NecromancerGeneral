@@ -1,0 +1,14 @@
+{
+  "name": "necromancer-server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.0",
+    "better-sqlite3": "^11.7.0"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "baseStats": {
+    "strength": 5,
+    "vitality": 4,
+    "agility": 5,
+    "endurance": 6,
+    "defense": 2
+  },
+  "formulas": {
+    "maxHp":       { "base": 20,  "scale": 5,   "stat": "vitality" },
+    "damage":      { "base": 1.0, "scale": 0.2, "stat": "strength" },
+    "moveSpeed":   { "base": 6.0, "scale": 0.4, "stat": "agility" },
+    "maxEnergy":   { "base": 80,  "scale": 8,   "stat": "endurance" },
+    "energyRegen": { "base": 14,  "scale": 2,   "stat": "endurance" }
+  },
+  "regenDelay": 0.4,
+  "sprintMultiplier": 1.6,
+  "sprintEnergyPerSec": 14,
+  "upgrades": {
+    "empower_self":   { "baseCost": 5,  "scale": 1.6 },
+    "empower_allies": { "baseCost": 8,  "scale": 1.7 },
+    "reinforce_cap":  { "baseCost": 10, "scale": 1.5 }
+  }
+}

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Necromancer General</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <script async src="https://vibej.am/2026/widget.js"></script>
+</head>
+<body>
+  <div id="hud">
+    <div id="hud-top">
+      <span id="battle-hostiles">⚔ 0 hostiles</span>
+      <span id="battle-allies">▲ 0 allies</span>
+    </div>
+
+    <div id="hud-controls">
+      <div class="control-row"><kbd>WASD</kbd> move</div>
+      <div class="control-row"><kbd>Shift</kbd> sprint</div>
+      <div class="control-row"><kbd>LMB</kbd> fire</div>
+      <div class="control-row"><kbd>Scroll</kbd> / <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> ammo</div>
+      <div class="control-row"><kbd>Q</kbd> <kbd>E</kbd> <kbd>R</kbd> upgrade</div>
+    </div>
+
+    <div id="hud-stats">
+      <div class="stat-row stat-kills">
+        <span class="stat-icon">⚔</span>
+        <span class="stat-value"><span id="kill-count">0</span></span>
+        <span class="stat-label">kills</span>
+      </div>
+      <div class="stat-row stat-souls">
+        <span class="stat-icon">☠</span>
+        <span class="stat-value"><span id="soul-count">0</span></span>
+        <span class="stat-label">souls</span>
+      </div>
+      <div class="stat-row stat-level">
+        <span class="stat-icon">✦</span>
+        <span class="stat-value">L<span id="level-count">0</span></span>
+        <span class="stat-label">level</span>
+      </div>
+    </div>
+
+    <div id="hud-ammo">
+      <span id="ammo-name" class="ammo-machine_gun">Machine Gun</span>
+      <span class="ammo-separator">·</span>
+      <span id="ammo-cost"></span>
+    </div>
+
+    <div id="hud-hp">
+      <div id="hp-bar-fill"></div>
+      <div id="hp-bar-label">
+        <span class="hp-tag">HEALTH</span>
+        <span class="hp-numbers"><span id="hp-current">0</span> / <span id="hp-max">0</span></span>
+      </div>
+    </div>
+
+    <div id="hud-energy">
+      <div id="energy-bar-fill"></div>
+      <div id="energy-bar-label">
+        <span class="energy-tag">ENERGY</span>
+        <span class="energy-numbers"><span id="energy-current">0</span> / <span id="energy-max">0</span></span>
+      </div>
+    </div>
+
+    <div id="hud-upgrades">
+      <div class="upgrade-title">UPGRADES</div>
+      <div class="upgrade-row" data-key="empower_self">
+        <span class="upgrade-hotkey">Q</span>
+        <span class="upgrade-label">Empower Self</span>
+        <span class="upgrade-level">L0</span>
+        <span class="upgrade-cost">5☠</span>
+      </div>
+      <div class="upgrade-row" data-key="empower_allies">
+        <span class="upgrade-hotkey">E</span>
+        <span class="upgrade-label">Empower Allies</span>
+        <span class="upgrade-level">L0</span>
+        <span class="upgrade-cost">8☠</span>
+      </div>
+      <div class="upgrade-row" data-key="reinforce_cap">
+        <span class="upgrade-hotkey">R</span>
+        <span class="upgrade-label">Reinforce Cap</span>
+        <span class="upgrade-level">L0</span>
+        <span class="upgrade-cost">10☠</span>
+      </div>
+    </div>
+
+    <div id="crosshair">+</div>
+    <div id="damage-flash"></div>
+    <div id="damage-indicators"></div>
+    <div id="lock-prompt">Click to enter battle</div>
+
+    <div id="round-banner" class="phase-pve">
+      <span id="round-phase">PvE · ALLIANCE</span>
+      <span id="round-generals">·  Generals: <span id="round-alive">1</span></span>
+      <span id="round-timer">·  Fog: <span id="round-timer-text">5:00</span></span>
+    </div>
+
+    <div id="round-overlay" class="hidden">
+      <div id="round-overlay-title">You have fallen</div>
+      <div id="round-overlay-sub">Spectating — await the round&rsquo;s end.</div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

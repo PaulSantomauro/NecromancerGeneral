@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+
+# Local env files (keep .env.production tracked — it's just the public WSS URL)
+.env
+.env.local
+.env.*.local
+
+# SQLite runtime files (server/world.db is a local/dev artifact)
+server/world.db
+server/world.db-shm
+server/world.db-wal
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
