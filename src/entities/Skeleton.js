@@ -7,6 +7,7 @@ import monstersConfig from '../config/monsters.json';
 import { createHpBar } from '../ui/HpBarSprite.js';
 import { getRenderTime } from '../systems/NetClock.js';
 import { wrapPosition, toroidalDelta } from '../systems/Toroid.js';
+import { FxPool } from '../systems/FxPool.js';
 
 const ALLIED_TINT = 0x4488ff;
 
@@ -162,6 +163,25 @@ export class Skeleton {
     this._erupting = true;
     this._eruptTimer = 0;
     this.mesh.position.y = -1.6;
+
+    // Ground dust ring + rising dust column. Allied summons also get a
+    // colored rune ring so different minion types read visually on spawn.
+    const cfg = this.mesh.userData.monsterConfig;
+    const groundPos = this.position.clone();
+    groundPos.y = 0.04;
+    FxPool.expandingRing({
+      position: groundPos, color: 0xa88a5a, maxRadius: 2.4, duration: 0.4,
+    });
+    if (this.faction === Faction.ALLIED && cfg?.bodyColor) {
+      FxPool.expandingRing({
+        position: groundPos, color: cfg.bodyColor, maxRadius: 1.7,
+        duration: 0.55, yOffset: 0.12,
+      });
+    }
+    FxPool.burst({
+      position: groundPos, count: 14, color: 0xb09a7a,
+      spread: 1.4, lifetime: 0.7, kind: 'dust', velocityY: 3.2, gravity: false,
+    });
   }
 
   setTint(hex) {
@@ -276,6 +296,26 @@ export class Skeleton {
     this.alive = false;
     this._dying = true;
     this._deathTimer = 0;
+
+    // Bone fragments + ground dust. The existing y-scale collapse on the
+    // main mesh still plays; these particles carry the visual weight so
+    // deaths don't feel weightless.
+    const cfg = this.mesh.userData.monsterConfig;
+    const s = cfg?.scale ?? 1;
+    const center = this.position.clone();
+    center.y = 0.7 * s;
+    FxPool.burst({
+      position: center, count: 6, color: cfg?.bodyColor ?? 0xdddd6c,
+      spread: 2.6, lifetime: 0.8, kind: 'bone', velocityY: 3.5, gravity: true,
+      scale: s,
+    });
+    const ground = this.position.clone();
+    ground.y = 0.05;
+    FxPool.burst({
+      position: ground, count: 10, color: 0xb0a090,
+      spread: 1.4, lifetime: 0.55, kind: 'dust', velocityY: 1.0, gravity: false,
+    });
+
     events.emit(GameEvent.ENEMY_DIED, { skeleton: this });
   }
 

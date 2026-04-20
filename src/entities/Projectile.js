@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GameEvent, events } from '../systems/EventSystem.js';
-import { convertEnemy } from '../systems/FactionSystem.js';
+import { convertEnemy, Faction } from '../systems/FactionSystem.js';
 import { wrapPosition } from '../systems/Toroid.js';
 
 // ── Mesh pool ─────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ function getGlowGeom(radius) {
   return g;
 }
 
-function buildProjectileMesh(color, radius) {
+function buildProjectileMesh(color, radius, ammoKey) {
   const mat = new THREE.MeshBasicMaterial({ color });
   const mesh = new THREE.Mesh(getCoreGeom(radius), mat);
   const glowMat = new THREE.MeshBasicMaterial({
@@ -34,6 +34,34 @@ function buildProjectileMesh(color, radius) {
   mesh.add(glow);
   mesh.userData.coreMat = mat;
   mesh.userData.glowMat = glowMat;
+
+  // Per-ammo identity children. Attached to the main pooled mesh so they
+  // follow position for free and the pool-release path cleans them up
+  // implicitly. No changes to construction/attachment API.
+  if (ammoKey === 'conversion_bolt') {
+    const torusMat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const torus = new THREE.Mesh(
+      new THREE.TorusGeometry(radius * 1.4, radius * 0.22, 8, 24),
+      torusMat,
+    );
+    mesh.add(torus);
+    mesh.userData.torus = torus;
+  } else if (ammoKey && ammoKey.startsWith('summon_')) {
+    const orbMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(radius * 0.35, 8, 6),
+      orbMat,
+    );
+    mesh.add(orb);
+    mesh.userData.orb = orb;
+  }
+
   return mesh;
 }
 
@@ -44,10 +72,11 @@ function acquireProjectileMesh(ammoKey, color, radius) {
     // In case the color (e.g. for variants) needs an update; cheap to set every time
     mesh.userData.coreMat?.color.setHex(color);
     mesh.userData.glowMat?.color.setHex(color);
+    mesh.userData.torus?.material.color.setHex(color);
     mesh.visible = true;
     return mesh;
   }
-  return buildProjectileMesh(color, radius);
+  return buildProjectileMesh(color, radius, ammoKey);
 }
 
 function releaseProjectileMesh(ammoKey, mesh) {
@@ -96,6 +125,9 @@ export class Projectile {
 
     this.mesh = acquireProjectileMesh(ammoKey, color, radius);
     this.mesh.position.copy(this.position);
+
+    this._age = 0;
+    this._radius = radius;
   }
 
   dispose() {
@@ -105,6 +137,22 @@ export class Projectile {
 
   update(dt) {
     if (!this.alive) return;
+    this._age += dt;
+
+    // Flourish animations — safe no-ops when the identity children are absent.
+    if (this.mesh && this.mesh.userData.torus) {
+      this.mesh.userData.torus.rotation.z += dt * 6;
+      this.mesh.userData.torus.rotation.x += dt * 2.5;
+    }
+    if (this.mesh && this.mesh.userData.orb) {
+      const a = this._age * 9;
+      const r = this._radius * 0.9;
+      this.mesh.userData.orb.position.set(
+        Math.cos(a) * r,
+        Math.sin(a * 0.7) * r * 0.4,
+        Math.sin(a) * r,
+      );
+    }
 
     if (this.arc) {
       this._elapsed += dt;
@@ -139,6 +187,11 @@ export class Projectile {
     if (this.ammoKey === 'machine_gun') {
       target.takeDamage(this.damage);
       events.emit(GameEvent.PROJECTILE_HIT, { projectile: this, target });
+      // Kill-confirm: emitted only for the local player's own shots that kill
+      // a hostile. Remote-replay projectiles and ally kills do not qualify.
+      if (!this.remoteOwnerId && !target.alive && target.faction === Faction.HOSTILE) {
+        events.emit(GameEvent.PLAYER_KILL, {});
+      }
     } else if (this.ammoKey === 'conversion_bolt') {
       convertEnemy(target, allSkeletons);
     }

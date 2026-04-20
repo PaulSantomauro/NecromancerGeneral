@@ -31,6 +31,7 @@ export const GameEvent = Object.freeze({
   NET_ROUND_STATE:        'net_round_state',
   NET_ROUND_ENDED:        'net_round_ended',
   DAMAGE_INDICATOR:       'damage_indicator',
+  PLAYER_KILL:            'player_kill',
 });
 
 export class EventSystem {

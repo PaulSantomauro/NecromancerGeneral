@@ -7,6 +7,28 @@ import ammoConfig from '../config/ammo.json';
 import { toroidalDelta } from '../systems/Toroid.js';
 
 const CAMERA_HEIGHT = 1.7;
+
+// Procedural muzzle-flash texture: radial gradient from bright core to
+// transparent edge. Generated once and shared by every Player's material.
+let _muzzleTexture = null;
+function getMuzzleTexture() {
+  if (_muzzleTexture) return _muzzleTexture;
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0,   'rgba(255,255,255,1)');
+  g.addColorStop(0.3, 'rgba(255,220,120,0.85)');
+  g.addColorStop(1,   'rgba(255,180,60,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  _muzzleTexture = new THREE.CanvasTexture(canvas);
+  _muzzleTexture.minFilter = THREE.LinearFilter;
+  _muzzleTexture.magFilter = THREE.LinearFilter;
+  return _muzzleTexture;
+}
+
 const AMMO_ORDER = [
   'machine_gun',
   'conversion_bolt',
@@ -72,6 +94,20 @@ export class Player {
     this._muzzleFlash.position.set(0.18, -0.1, -0.55);
     camera.add(this._muzzleFlash);
     this._muzzleTimer = 0;
+
+    // Additive sprite anchored at the muzzle. Scale-pulses and fades each
+    // fire. Camera-relative so it always faces the viewer correctly.
+    this._muzzleSpriteMat = new THREE.SpriteMaterial({
+      map: getMuzzleTexture(), color: 0xffd060, transparent: true, opacity: 0,
+      depthWrite: false, depthTest: false,
+      blending: THREE.AdditiveBlending, fog: false,
+    });
+    this._muzzleSprite = new THREE.Sprite(this._muzzleSpriteMat);
+    this._muzzleSprite.scale.set(0.55, 0.55, 1);
+    this._muzzleSprite.position.set(0.18, -0.1, -0.56);
+    camera.add(this._muzzleSprite);
+    this._muzzleSpriteTimer = 0;
+    this._muzzleSpriteLife = 0.08;
 
     this._bindInput(domElement);
   }
@@ -198,6 +234,17 @@ export class Player {
       this._muzzleFlash.intensity = 0;
     }
 
+    if (this._muzzleSpriteTimer > 0) {
+      this._muzzleSpriteTimer = Math.max(0, this._muzzleSpriteTimer - dt);
+      const k = this._muzzleSpriteTimer / this._muzzleSpriteLife; // 1 → 0
+      const pulse = Math.sin((1 - k) * Math.PI);
+      this._muzzleSpriteMat.opacity = pulse * 0.95;
+      const s = 0.4 + pulse * 0.7;
+      this._muzzleSprite.scale.set(s, s, 1);
+    } else if (this._muzzleSpriteMat.opacity !== 0) {
+      this._muzzleSpriteMat.opacity = 0;
+    }
+
     if (this._mouseDown) this._tryFire();
   }
 
@@ -266,6 +313,8 @@ export class Player {
                      : cfg.category === 'summon' ? 0xc080ff
                      :                             0xffd060;
     this._muzzleFlash.color.setHex(flashColor);
+    this._muzzleSpriteMat.color.setHex(flashColor);
+    this._muzzleSpriteTimer = this._muzzleSpriteLife;
     events.emit(GameEvent.PLAYER_FIRED, {
       ammoKey: cfg.key,
       origin:    { x: origin.x,    y: origin.y,    z: origin.z    },

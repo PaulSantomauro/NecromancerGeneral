@@ -290,6 +290,16 @@ kbd {
 #crosshair.ammo-summon_stalker  { color: #5c2b93; }
 #crosshair.ammo-summon_giant    { color: #e6d495; }
 
+/* Kill-confirm pulse — fires when the local player lands a killing shot. */
+#crosshair.kill-confirm {
+  animation: crosshair-kill 0.36s ease-out;
+}
+@keyframes crosshair-kill {
+  0%   { transform: translate(-50%, -50%) scale(1);   color: #fff;    text-shadow: 0 0 18px #ff5c3a, 0 0 8px #ffffff; }
+  40%  { transform: translate(-50%, -50%) scale(1.8); color: #fff0c8; text-shadow: 0 0 22px #ff4040, 0 0 10px #ffffff; }
+  100% { transform: translate(-50%, -50%) scale(1);   color: inherit; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
+}
+
 /* === Round banner (battle-royale phase) === */
 #round-banner {
   position: absolute;
@@ -377,13 +387,17 @@ kbd {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 35%, rgba(180, 25, 25, 0.6) 100%);
+  /* Layered radial: darker outer ring + warm inner glow → feels more like
+     a visceral hit than a single flat red wash. */
+  background:
+    radial-gradient(ellipse at center, transparent 40%, rgba(220, 35, 20, 0.55) 85%, rgba(140, 10, 10, 0.8) 100%),
+    radial-gradient(ellipse at center, transparent 60%, rgba(255, 90, 40, 0.35) 100%);
   opacity: 0;
   transition: opacity 0.55s cubic-bezier(0.25, 0.1, 0.25, 1);
   z-index: 50;
 }
 #damage-flash.flash {
-  opacity: 0.85;
+  opacity: 0.9;
   transition: opacity 0s;
 }
 
@@ -397,27 +411,29 @@ kbd {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 500px;
-  height: 500px;
-  margin-left: -250px;
-  margin-top: -250px;
+  width: 640px;
+  height: 640px;
+  margin-left: -320px;
+  margin-top: -320px;
   border-radius: 50%;
   pointer-events: none;
   background: conic-gradient(
-    from -14deg,
+    from -18deg,
     transparent 0deg,
-    rgba(255, 60, 60, 0.0) 6deg,
-    rgba(255, 60, 60, 0.85) 12deg,
-    rgba(255, 100, 80, 0.95) 14deg,
-    rgba(255, 60, 60, 0.85) 16deg,
-    rgba(255, 60, 60, 0.0) 22deg,
-    transparent 28deg,
+    rgba(255, 60, 60, 0.0) 4deg,
+    rgba(255, 70, 40, 0.85) 12deg,
+    rgba(255, 140, 80, 1.0) 18deg,
+    rgba(255, 70, 40, 0.85) 24deg,
+    rgba(255, 60, 60, 0.0) 32deg,
+    transparent 36deg,
     transparent 360deg
   );
-  -webkit-mask-image: radial-gradient(circle, transparent 42%, black 44%, black 49%, transparent 50%);
-          mask-image: radial-gradient(circle, transparent 42%, black 44%, black 49%, transparent 50%);
+  /* Thicker arc with softer edges reads directionally at a glance. */
+  -webkit-mask-image: radial-gradient(circle, transparent 38%, black 43%, black 52%, transparent 56%);
+          mask-image: radial-gradient(circle, transparent 38%, black 43%, black 52%, transparent 56%);
   animation: damage-arc-fade 1.6s ease-out forwards;
   will-change: transform, opacity;
+  filter: drop-shadow(0 0 14px rgba(255, 60, 30, 0.65));
 }
 @keyframes damage-arc-fade {
   0%   { opacity: 0.95; transform: rotate(var(--a)) scale(1); }

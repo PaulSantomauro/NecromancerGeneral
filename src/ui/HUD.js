@@ -86,6 +86,20 @@ export class HUD {
       this._addDamageArc(angle);
     });
 
+    // Kill-confirm crosshair pulse. Emitted only from Projectile.onHit when
+    // my own shot drops a hostile, so it fires once per kill cleanly.
+    events.subscribe(GameEvent.PLAYER_KILL, () => {
+      if (!this.crosshair) return;
+      this.crosshair.classList.remove('kill-confirm');
+      // Force reflow so the CSS animation restarts on each kill.
+      void this.crosshair.offsetWidth;
+      this.crosshair.classList.add('kill-confirm');
+      if (this._killConfirmTimer) clearTimeout(this._killConfirmTimer);
+      this._killConfirmTimer = setTimeout(() => {
+        this.crosshair.classList.remove('kill-confirm');
+      }, 360);
+    });
+
     events.subscribe(GameEvent.SOULS_CHANGED, ({ total }) => {
       this.soulCount.textContent = total;
       this._renderUpgrades();

@@ -17,6 +17,8 @@ import { SplashScreen } from './ui/SplashScreen.js';
 import { GameEvent, events } from './systems/EventSystem.js';
 import battleConfig from './config/battle.json';
 import { wrapPosition, closestWrap, toroidalDelta } from './systems/Toroid.js';
+import { FxPool } from './systems/FxPool.js';
+import { ScreenShake } from './systems/ScreenShake.js';
 
 const WS_URL = import.meta.env?.VITE_WS_URL || 'http://localhost:2567';
 
@@ -28,6 +30,7 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const battlefield = new Battlefield(scene);
+FxPool.init(scene);
 
 const camera = new THREE.PerspectiveCamera(
   75, window.innerWidth / window.innerHeight, 0.1, 400,
@@ -270,6 +273,14 @@ events.subscribe(GameEvent.ENEMY_CONVERTED, ({ skeleton }) => {
 events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton }) => {
   if (!skeleton) return;
   if (skeleton.faction === Faction.HOSTILE) localKills++;
+});
+
+// Camera shake on self-damage. Amplitude scales with hit size; capped so
+// even continuous fog ticks don't smear the screen.
+events.subscribe(GameEvent.PLAYER_DAMAGED, ({ amount }) => {
+  if (!amount || amount <= 0) return;
+  const amp = Math.min(0.12, 0.02 + amount * 0.01);
+  ScreenShake.trigger(amp, 0.14);
 });
 
 // On any allied death, broadcast ally_died (works for both my own and remote)
@@ -829,6 +840,13 @@ function animate() {
       skeletons.splice(i, 1);
     }
   }
+
+  FxPool.update(dt);
+
+  // Shake is applied after all camera positioning has settled. The offset
+  // gets overwritten on the next frame by the usual player-follow update,
+  // so there's no drift compensation needed.
+  ScreenShake.apply(player.controls.getObject(), dt);
 
   renderer.render(scene, camera);
 }

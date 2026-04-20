@@ -20,6 +20,7 @@ export class PlayerStats {
     this.damageBonus = 0;
     this.maxEnergyBonus = 0;
     this.energyRegenBonus = 0;
+    this.maxHpMultiplier = 1;
 
     this._recompute();
 
@@ -32,7 +33,7 @@ export class PlayerStats {
   _recompute() {
     const f = playerConfig.formulas;
     const b = this.baseStats;
-    this.maxHp        = derive(f, b, 'maxHp');
+    this.maxHp        = derive(f, b, 'maxHp') * this.maxHpMultiplier;
     this.damage       = derive(f, b, 'damage') + this.damageBonus;
     this.moveSpeed    = derive(f, b, 'moveSpeed');
     this.maxEnergy    = derive(f, b, 'maxEnergy') + this.maxEnergyBonus;
@@ -80,8 +81,13 @@ export class PlayerStats {
     this.maxEnergyBonus += 12;
     this.energyRegenBonus += 3;
     this.damageBonus += 0.15;
+    this.maxHpMultiplier *= 1.10;
     this._recompute();
+    // Empower Self heals to full and tops up energy; HUD picks up both via
+    // PLAYER_DAMAGED and ENERGY_CHANGED emits.
+    this.hp = this.maxHp;
     this.energy = Math.min(this.maxEnergy, this.energy + 12);
+    events.emit(GameEvent.PLAYER_DAMAGED, { amount: 0, hp: this.hp, max: this.maxHp });
     this._emitEnergy();
   }
 

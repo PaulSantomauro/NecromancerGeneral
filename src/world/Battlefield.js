@@ -47,13 +47,16 @@ export class Battlefield {
     scene.fog = new THREE.FogExp2(0x2a1210, 0.011);
 
     this._buildSky(scene);
+    this._buildStars(scene);
     this._buildGround(scene);
     this._buildLights(scene);
     this._buildSpawnRings(scene);
     this._buildScatter(scene);
     this._buildBoundary(scene);
     this._buildFog(scene);
+    this._buildFogEdgeRing(scene);
     this.embers = this._buildEmbers(scene);
+    this.wisps = this._buildWisps(scene);
     this._spawnRingTime = 0;
     this.setFogRadius(95);
   }
@@ -63,6 +66,12 @@ export class Battlefield {
     if (this._fogMesh) {
       this._fogMesh.scale.x = r;
       this._fogMesh.scale.z = r;
+    }
+    // Ground-edge ring tracks the fog cylinder so the ember wall feels
+    // anchored to terrain instead of floating.
+    if (this._fogEdgeRing) {
+      this._fogEdgeRing.scale.x = r;
+      this._fogEdgeRing.scale.z = r;
     }
   }
 
@@ -121,6 +130,108 @@ export class Battlefield {
     halo.position.copy(moon.position).add(new THREE.Vector3(0, 0, 0.2));
     halo.lookAt(0, 0, 0);
     scene.add(halo);
+  }
+
+  // Faint additive stars across the upper hemisphere of the sky dome. Dim
+  // in the direction of the moon so the moon still anchors the sky composition.
+  _buildStars(scene) {
+    const count = 400;
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const moonDir = new THREE.Vector3(-70, 100, -220).normalize();
+    for (let i = 0; i < count; i++) {
+      const u = Math.random();
+      const v = 0.08 + Math.random() * 0.72;
+      const theta = u * Math.PI * 2;
+      const phi = Math.acos(1 - v);
+      const x = Math.sin(phi) * Math.cos(theta) * 260;
+      const y = Math.cos(phi) * 260;
+      const z = Math.sin(phi) * Math.sin(theta) * 260;
+      positions[i * 3]     = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+      const dir = new THREE.Vector3(x, y, z).normalize();
+      const nearMoon = Math.max(0, dir.dot(moonDir));
+      const base = 0.4 + Math.random() * 0.55;
+      const k = base * (1 - nearMoon * 0.7);
+      colors[i * 3]     = k;
+      colors[i * 3 + 1] = k * 0.95;
+      colors[i * 3 + 2] = k * 0.85;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      size: 1.3, sizeAttenuation: false,
+      vertexColors: true, transparent: true, opacity: 0.9,
+      fog: false, depthWrite: false,
+    });
+    scene.add(new THREE.Points(geom, mat));
+  }
+
+  // Ground-aligned additive ring sized to match the current fog radius.
+  // Scaled from setFogRadius so it always traces the ember wall base.
+  _buildFogEdgeRing(scene) {
+    const geom = new THREE.RingGeometry(0.96, 1.0, 96);
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.DoubleSide,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+      uniforms: {
+        edgeColor: { value: new THREE.Color(0x8a2a10) },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 edgeColor;
+        varying vec2 vUv;
+        void main() {
+          float inner = smoothstep(0.0, 1.0, vUv.y);
+          gl_FragColor = vec4(edgeColor, inner * 0.75);
+        }
+      `,
+    });
+    const ring = new THREE.Mesh(geom, mat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.05;
+    ring.renderOrder = 1;
+    scene.add(ring);
+    this._fogEdgeRing = ring;
+  }
+
+  // Small number of warm "wisp" particles drifting near the player.
+  // Regenerated when they drift out of a 14-unit radius so they always
+  // feel near the viewer. Animated in update().
+  _buildWisps(scene) {
+    const count = 60;
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+    const life = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * 28;
+      positions[i * 3 + 1] = Math.random() * 3;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 28;
+      velocities[i * 3]     = (Math.random() - 0.5) * 0.15;
+      velocities[i * 3 + 1] = 0.08 + Math.random() * 0.18;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.15;
+      life[i] = Math.random() * 4;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xffc48c, size: 0.08,
+      transparent: true, opacity: 0.6, fog: true,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const points = new THREE.Points(geom, mat);
+    scene.add(points);
+    return { points, velocities, life, count };
   }
 
   _buildGround(scene) {
@@ -494,6 +605,32 @@ export class Battlefield {
     }
     if (this._fogMat) {
       this._fogMat.uniforms.time.value = this._spawnRingTime;
+    }
+
+    // Wisps drift and respawn inside a radius around the player. Cheap —
+    // 60 points, single buffer update per frame.
+    if (this.wisps) {
+      const { points, velocities, life, count } = this.wisps;
+      const pos = points.geometry.attributes.position;
+      const arr = pos.array;
+      for (let i = 0; i < count; i++) {
+        const i3 = i * 3;
+        life[i] += dt;
+        arr[i3]     += velocities[i3] * dt;
+        arr[i3 + 1] += velocities[i3 + 1] * dt;
+        arr[i3 + 2] += velocities[i3 + 2] * dt;
+        const dx = arr[i3]     - playerPos.x;
+        const dz = arr[i3 + 2] - playerPos.z;
+        if (arr[i3 + 1] > 4 || life[i] > 6 || dx * dx + dz * dz > 14 * 14) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 2 + Math.random() * 10;
+          arr[i3]     = playerPos.x + Math.cos(a) * r;
+          arr[i3 + 1] = 0.1 + Math.random() * 0.8;
+          arr[i3 + 2] = playerPos.z + Math.sin(a) * r;
+          life[i] = 0;
+        }
+      }
+      pos.needsUpdate = true;
     }
   }
 }

@@ -14,7 +14,7 @@
   "battlefieldRadius": 100,
   "initialHostileCount": 30,
   "initialAlliedCount": 5,
-  "hostileSpawnInterval": 3.5,
+  "hostileSpawnInterval": 1.75,
   "hostileSpawnBatchSize": 2,
   "maxHostiles": 100,
   "maxAllies": 40,
