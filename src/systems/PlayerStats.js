@@ -77,6 +77,21 @@ export class PlayerStats {
     });
   }
 
+  // Zero all upgrade-derived bonuses and restore hp/energy to full. Called
+  // from the round-restart path before the client rejoins, so the upcoming
+  // restore_state rebuilds from a known baseline instead of stacking.
+  resetBonuses() {
+    this.damageBonus = 0;
+    this.maxEnergyBonus = 0;
+    this.energyRegenBonus = 0;
+    this.maxHpMultiplier = 1;
+    this._recompute();
+    this.hp = this.maxHp;
+    this.energy = this.maxEnergy;
+    events.emit(GameEvent.PLAYER_DAMAGED, { amount: 0, hp: this.hp, max: this.maxHp });
+    this._emitEnergy();
+  }
+
   applyEmpowerSelf() {
     this.maxEnergyBonus += 12;
     this.energyRegenBonus += 3;

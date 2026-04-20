@@ -468,10 +468,10 @@ kbd {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  gap: 18px;
   text-align: center;
-  max-width: 460px;
-  padding: 44px 28px;
+  max-width: 560px;
+  padding: 44px 32px;
 }
 
 .splash-title {
@@ -487,8 +487,111 @@ kbd {
   color: #ffb0a0;
   font-size: 14px;
   margin: 0;
+  opacity: 0.9;
+  letter-spacing: 0.4px;
+  line-height: 1.45;
+  max-width: 440px;
+}
+
+/* Phase-flow pills: visual summary of the PvE → PvP → Victory loop. */
+.splash-phases {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.splash-phase {
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.splash-phase.phase-pve {
+  color: #d4e8ff;
+  background: rgba(60, 120, 220, 0.18);
+  border: 1px solid rgba(120, 180, 255, 0.45);
+  box-shadow: 0 0 14px rgba(60, 120, 220, 0.2);
+}
+.splash-phase.phase-pvp {
+  color: #ffc0a0;
+  background: rgba(255, 60, 40, 0.15);
+  border: 1px solid rgba(255, 60, 40, 0.5);
+  box-shadow: 0 0 14px rgba(255, 60, 40, 0.25);
+}
+.splash-phase.phase-end {
+  color: #ffe4a0;
+  background: rgba(255, 200, 80, 0.15);
+  border: 1px solid rgba(255, 200, 80, 0.5);
+  box-shadow: 0 0 14px rgba(255, 200, 80, 0.25);
+}
+.splash-arrow {
+  color: rgba(200, 180, 220, 0.45);
+  font-size: 12px;
+}
+
+.splash-meta {
+  font-size: 11px;
+  color: #a595b5;
+  margin: 0;
+  opacity: 0.8;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+/* 4-column control quick-reference. Each cell: label, keycap(s), hint. */
+.splash-controls {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  width: 100%;
+  margin-top: 2px;
+}
+.splash-ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+  background: rgba(20, 14, 28, 0.55);
+  border: 1px solid rgba(180, 100, 220, 0.2);
+  border-radius: 6px;
+  text-align: center;
+  min-width: 0;
+}
+.splash-ctrl-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  color: #b894d8;
+}
+.splash-ctrl-keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  margin: 1px 0;
+  line-height: 1.5;
+}
+.splash-ctrl-keys kbd {
+  font-size: 9px;
+  min-width: 15px;
+  padding: 1px 4px;
+}
+.splash-ctrl-hint {
+  font-size: 10px;
+  color: #a497b4;
   opacity: 0.85;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+}
+.splash-ctrl-hint kbd {
+  font-size: 9px;
+  min-width: 14px;
+  padding: 0 4px;
 }
 
 .splash-form {
@@ -538,7 +641,10 @@ kbd {
 
 .splash-hint {
   font-size: 11px;
-  color: #888;
+  color: #988c9e;
   margin: 0;
-  opacity: 0.7;
+  opacity: 0.85;
+  letter-spacing: 0.2px;
+  line-height: 1.45;
+  max-width: 440px;
 }

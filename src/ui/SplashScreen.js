@@ -13,7 +13,17 @@ export class SplashScreen {
     el.innerHTML = `
       <div id="splash-inner">
         <h1 class="splash-title">☠ NECROMANCER GENERAL</h1>
-        <p class="splash-sub">A persistent battlefield. All generals are enemies.</p>
+        <p class="splash-sub">Raise an army from the dead. Outlast the shrinking fog. Be the last general standing.</p>
+
+        <div class="splash-phases">
+          <span class="splash-phase phase-pve">PvE · Alliance</span>
+          <span class="splash-arrow">▸</span>
+          <span class="splash-phase phase-pvp">PvP · Last Stand</span>
+          <span class="splash-arrow">▸</span>
+          <span class="splash-phase phase-end">Victory</span>
+        </div>
+        <p class="splash-meta">7-minute rounds · 14 spawn zones · 300u arena</p>
+
         <div class="splash-form">
           <input
             id="splash-name"
@@ -25,7 +35,39 @@ export class SplashScreen {
           />
           <button id="splash-enter">ENTER THE BATTLEFIELD</button>
         </div>
-        <p class="splash-hint">Your progress is saved. Return to reclaim your army.</p>
+
+        <div class="splash-controls">
+          <div class="splash-ctrl">
+            <span class="splash-ctrl-label">MOVE</span>
+            <span class="splash-ctrl-keys">
+              <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+            </span>
+            <span class="splash-ctrl-hint"><kbd>Shift</kbd> sprint</span>
+          </div>
+          <div class="splash-ctrl">
+            <span class="splash-ctrl-label">COMBAT</span>
+            <span class="splash-ctrl-keys">
+              <kbd>LMB</kbd><kbd>RMB</kbd>
+            </span>
+            <span class="splash-ctrl-hint">fire · attack-move</span>
+          </div>
+          <div class="splash-ctrl">
+            <span class="splash-ctrl-label">AMMO</span>
+            <span class="splash-ctrl-keys">
+              <kbd>1</kbd>–<kbd>7</kbd> / <kbd>scroll</kbd>
+            </span>
+            <span class="splash-ctrl-hint">gun → summons</span>
+          </div>
+          <div class="splash-ctrl">
+            <span class="splash-ctrl-label">UPGRADE</span>
+            <span class="splash-ctrl-keys">
+              <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd>
+            </span>
+            <span class="splash-ctrl-hint">spend souls ☠</span>
+          </div>
+        </div>
+
+        <p class="splash-hint">Every round is a fresh slate — souls, allies, and upgrades all reset when the next round begins.</p>
       </div>
     `;
 

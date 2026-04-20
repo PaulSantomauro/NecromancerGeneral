@@ -33,7 +33,7 @@ const battlefield = new Battlefield(scene);
 FxPool.init(scene);
 
 const camera = new THREE.PerspectiveCamera(
-  75, window.innerWidth / window.innerHeight, 0.1, 400,
+  75, window.innerWidth / window.innerHeight, 0.1, 650,
 );
 camera.position.set(
   battleConfig.playerSpawnPoint[0],
@@ -634,6 +634,13 @@ function onRoundRestarted() {
     if (typeof p.dispose === 'function') p.dispose();
   }
   projectiles.length = 0;
+
+  // Fully reset the general's progression/stat state before rejoining so the
+  // upcoming restore_state rebuilds us from zero. Server-side resetRound
+  // wipes the DB upgrades + souls + allies; these local calls mirror that on
+  // the client so maxHp/damage/energy bonuses don't persist into the round.
+  progression.resetForNewRound();
+  player.stats.resetBonuses();
 
   player.alive = true;
   player.stats.setHp(player.stats.maxHp);

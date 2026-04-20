@@ -38,7 +38,9 @@ export class ProgressionSystem {
     events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton }) => {
       if (this.networked) return;
       if (skeleton && skeleton.faction === Faction.HOSTILE) {
-        this._grantSouls(1);
+        // Bounty scales per-type via `soulValue` on the Skeleton (see
+        // monsters.json): skeleton/runner 1 → stalker 2 → brute 4 → giant 8.
+        this._grantSouls(skeleton.soulValue ?? 1);
       }
     });
   }
@@ -59,6 +61,23 @@ export class ProgressionSystem {
   _overrideSouls(amount) {
     this.souls = amount;
     events.emit(GameEvent.SOULS_CHANGED, { total: this.souls, delta: 0 });
+  }
+
+  // Called from the round-restart path before the client rejoins. Returns
+  // the system to a known baseline so the following restore_state → delta
+  // apply starts from zero.
+  resetForNewRound() {
+    this.levels.empower_self = 0;
+    this.levels.empower_allies = 0;
+    this.levels.reinforce_cap = 0;
+    this.allyTier = 0;
+    this.souls = 0;
+    if (this.battleDirector && this.battleDirector.config) {
+      this.battleDirector.maxAllies = this.battleDirector.config.maxAllies;
+      this.battleDirector.hostileSpawnBatchSize = this.battleDirector.config.hostileSpawnBatchSize;
+    }
+    events.emit(GameEvent.SOULS_CHANGED, { total: 0, delta: 0 });
+    events.emit(GameEvent.UPGRADE_PURCHASED, { key: '_restore', newLevel: 0 });
   }
 
   _overrideUpgrades(upgrades) {

@@ -1,21 +1,36 @@
 import * as THREE from 'three';
 import battleConfig from '../config/battle.json';
 
-const GROUND_SIZE = 500;
-const GROUND_SEGMENTS = 120;
+const GROUND_SIZE = 700;
+const GROUND_SEGMENTS = 150;
 
 const HILLS = [
+  // Every hostile spawn zone gets a matching mound so the zones sit on
+  // elevated ground.
   ...battleConfig.hostileSpawnZones.map(z => ({
     x: z.center[0], z: z.center[2], r: z.radius * 1.2, h: 2.5 + z.radius * 0.12,
   })),
-  { x: 0,   z: 0,    r: 18, h: 1.2 },
-  { x: -30, z: 15,   r: 14, h: 2.0 },
-  { x: 25,  z: 20,   r: 12, h: 1.8 },
-  { x: -80, z: -60,  r: 20, h: 3.0 },
-  { x: 80,  z: -60,  r: 20, h: 3.0 },
-  { x: 0,   z: -40,  r: 16, h: 1.5 },
-  { x: -20, z: -80,  r: 12, h: 2.2 },
-  { x: 20,  z: 80,   r: 15, h: 2.0 },
+  // Central ridges — low rolling features near the safe-spawn core.
+  { x:  0,    z:  0,    r: 20, h: 1.4 },
+  { x: -30,   z:  22,   r: 16, h: 2.2 },
+  { x:  28,   z:  32,   r: 14, h: 2.0 },
+  { x:  0,    z: -40,   r: 18, h: 1.7 },
+  // Mid-arena mounds — break sightlines around the meeting ground.
+  { x: -75,   z: -50,   r: 22, h: 3.0 },
+  { x:  75,   z: -50,   r: 22, h: 3.0 },
+  { x: -30,   z:  78,   r: 16, h: 2.4 },
+  { x:  30,   z:  78,   r: 16, h: 2.4 },
+  { x: -82,   z:  30,   r: 18, h: 2.6 },
+  { x:  82,   z:  30,   r: 18, h: 2.6 },
+  // Outer reaches — bigger bluffs near the arena edge.
+  { x: -115,  z:  60,   r: 22, h: 3.2 },
+  { x:  115,  z:  60,   r: 22, h: 3.2 },
+  { x: -110,  z: -110,  r: 24, h: 3.6 },
+  { x:  110,  z: -110,  r: 24, h: 3.6 },
+  { x:  0,    z:  130,  r: 20, h: 2.8 },
+  { x: -128,  z:  -8,   r: 20, h: 2.8 },
+  { x:  128,  z:  -8,   r: 20, h: 2.8 },
+  { x:  0,    z: -138,  r: 22, h: 3.2 },
 ];
 
 // Evaluate terrain height at any world (x, z) using the same formula as the mesh
@@ -80,7 +95,9 @@ export class Battlefield {
   }
 
   _buildSky(scene) {
-    const skyGeom = new THREE.SphereGeometry(280, 32, 20);
+    // Sky radius sized so the player stays inside the dome even at the far
+    // corners (diagonal ≈ 212 units for a 300-wide world).
+    const skyGeom = new THREE.SphereGeometry(400, 32, 20);
     const skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
@@ -145,9 +162,9 @@ export class Battlefield {
       const v = 0.08 + Math.random() * 0.72;
       const theta = u * Math.PI * 2;
       const phi = Math.acos(1 - v);
-      const x = Math.sin(phi) * Math.cos(theta) * 260;
-      const y = Math.cos(phi) * 260;
-      const z = Math.sin(phi) * Math.sin(theta) * 260;
+      const x = Math.sin(phi) * Math.cos(theta) * 380;
+      const y = Math.cos(phi) * 380;
+      const z = Math.sin(phi) * Math.sin(theta) * 380;
       positions[i * 3]     = x;
       positions[i * 3 + 1] = y;
       positions[i * 3 + 2] = z;
@@ -238,10 +255,20 @@ export class Battlefield {
     const geom = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, GROUND_SEGMENTS, GROUND_SEGMENTS);
     const pos = geom.attributes.position;
     const colors = new Float32Array(pos.count * 3);
-    const base  = new THREE.Color(0x483020);
-    const dark  = new THREE.Color(0x281410);
-    const green = new THREE.Color(0x2a3018);
-    const path  = new THREE.Color(0x5a4030);
+    const base   = new THREE.Color(0x483020);
+    const dark   = new THREE.Color(0x281410);
+    const green  = new THREE.Color(0x2a3018);
+    const path   = new THREE.Color(0x5a4030);
+    const scorch = new THREE.Color(0x1a0c08); // burnt ring around spawn zones
+
+    // Precompute spawn zone centers in plane-local coords so we can tint
+    // scorched earth around them without doing it per-frame.
+    // PlaneGeometry local (x, y) maps to world (x, -z).
+    const scorchZones = battleConfig.hostileSpawnZones.map(z => ({
+      lx: z.center[0],
+      ly: -z.center[2],
+      r: z.radius + 6,
+    }));
 
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
@@ -254,7 +281,7 @@ export class Battlefield {
 
       for (const hill of HILLS) {
         const dx = x - hill.x;
-        const dz = y + hill.z; // fixed: localY = -worldZ → match with +hill.z
+        const dz = y + hill.z;
         const d = Math.sqrt(dx * dx + dz * dz);
         if (d < hill.r) {
           const t = 1 - d / hill.r;
@@ -269,10 +296,24 @@ export class Battlefield {
       const pathMix = Math.max(0, 1 - Math.abs(x * 0.015) - Math.abs(y * 0.015)) * 0.3;
       const edgeDark = Math.min(1, Math.max(0, (distFromCenter - 80) / 40));
 
+      // Scorch falloff — nearest spawn zone, smooth ramp toward the center.
+      let scorchMix = 0;
+      for (const z of scorchZones) {
+        const dx = x - z.lx;
+        const dy = y - z.ly;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < z.r) {
+          const t = 1 - d / z.r;
+          const s = t * t * (3 - 2 * t) * 0.55;
+          if (s > scorchMix) scorchMix = s;
+        }
+      }
+
       const c = base.clone();
       c.lerp(green, greenMix);
       c.lerp(path, pathMix);
       c.lerp(dark, edgeDark);
+      c.lerp(scorch, scorchMix);
       colors[i * 3]     = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
@@ -280,10 +321,117 @@ export class Battlefield {
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geom.computeVertexNormals();
 
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+    // Procedural dirt texture tiles across the plane and multiplies with the
+    // vertex colors. Gives near-field detail (pebbles, cracks, stains) that
+    // the vertex palette alone can't, while preserving the existing regional
+    // color mixing.
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0,
+      map: this._buildGroundTexture(),
+    });
     const ground = new THREE.Mesh(geom, mat);
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
+  }
+
+  // Procedural 1024² canvas texture used as the ground colour map. Combines
+  // low-frequency noise (regional variation), scattered pebble specks, thin
+  // cracks, and occasional dark bloodstain blobs. Generated once at boot.
+  _buildGroundTexture() {
+    const size = 1024;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    // Base fill: multi-octave sin-noise producing a mottled dirt look. Range
+    // is warm brown with enough per-pixel variation to read as surface
+    // texture up close without looking like TV static.
+    const img = ctx.createImageData(size, size);
+    const data = img.data;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        let n = 0;
+        n += Math.sin(x * 0.03) * Math.cos(y * 0.025) * 0.4;
+        n += Math.sin(x * 0.09 + y * 0.07) * 0.25;
+        n += Math.sin(x * 0.25 + y * 0.33) * 0.15;
+        n += (Math.random() - 0.5) * 0.18;
+        const v = 0.5 + n * 0.5; // ~0..1
+        const i = (y * size + x) * 4;
+        data[i]     = Math.min(255, 110 + v * 95);   // R
+        data[i + 1] = Math.min(255,  75 + v * 70);   // G
+        data[i + 2] = Math.min(255,  45 + v * 45);   // B
+        data[i + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+
+    // Dark pebble specks.
+    ctx.fillStyle = 'rgba(25, 15, 10, 0.6)';
+    for (let i = 0; i < 2000; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const r = 0.6 + Math.random() * 2.5;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Lighter pebble highlights (catches the torch light nicely).
+    ctx.fillStyle = 'rgba(195, 170, 135, 0.5)';
+    for (let i = 0; i < 850; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const r = 0.5 + Math.random() * 1.8;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Thin surface cracks — short dark strokes with random angles.
+    ctx.strokeStyle = 'rgba(20, 10, 8, 0.55)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 700; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const len = 6 + Math.random() * 44;
+      const angle = Math.random() * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+      ctx.stroke();
+    }
+
+    // Occasional dark bloodstain blobs — radial gradient so edges dissolve.
+    for (let i = 0; i < 50; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const r = 10 + Math.random() * 28;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0,   'rgba(95, 15, 10, 0.55)');
+      g.addColorStop(0.6, 'rgba(60, 10,  8, 0.28)');
+      g.addColorStop(1,   'rgba(40, 10,  8, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Scattered ash flecks — tiny, near-white dots.
+    ctx.fillStyle = 'rgba(210, 200, 180, 0.4)';
+    for (let i = 0; i < 400; i++) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(10, 10); // ~50u per tile on the 500u plane
+    tex.anisotropy = 4;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
   }
 
   _buildLights(scene) {
@@ -351,8 +499,8 @@ export class Battlefield {
     const rockPositions = [];
     const stumpPositions = [];
 
-    for (let i = 0; i < 900; i++) {
-      const r = 6 + Math.pow(rng(), 0.5) * 180;
+    for (let i = 0; i < 1200; i++) {
+      const r = 6 + Math.pow(rng(), 0.5) * 220;
       const a = rng() * Math.PI * 2;
       const wx = Math.cos(a) * r;
       const wz = Math.sin(a) * r;

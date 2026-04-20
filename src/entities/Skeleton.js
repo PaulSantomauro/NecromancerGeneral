@@ -95,6 +95,11 @@ export class Skeleton {
     this._cooldownMin = cfg.cooldownMin;
     this._cooldownMax = cfg.cooldownMax;
 
+    // Bounty for killing this monster. Read by ProgressionSystem on
+    // ENEMY_DIED; scales with the monster's relative size/power (configured
+    // per-type in monsters.json).
+    this.soulValue = cfg.soulValue ?? 1;
+
     this.aggroRadius = cfg.aggroRadius;
     this.patrolRadius = cfg.patrolRadius;
     this.patrolCenter = this.position.clone();

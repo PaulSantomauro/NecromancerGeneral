@@ -19,9 +19,18 @@ const FOG_TIME   = ROUND_CFG.fogShrinkSeconds ?? 300;
 const PVE_TIMEOUT = ROUND_CFG.pveTimeoutSeconds ?? 60;
 const CLEAR_TICKS = ROUND_CFG.hostileCountClearTicks ?? 2;
 const MUZZLE_OFFSET = 1.2;
-const WORLD_SIZE = 200;
+const WORLD_SIZE = battleConfig.worldSize ?? 200;
 const W_HALF = WORLD_SIZE / 2;
 const EDGE_BUFFER = 0.5;
+// Safe spawn radius — generous but well inside the initial fog radius so
+// no player is dropped into the lethal ring.
+const SPAWN_RADIUS = Math.min(100, (FOG_START ?? 95) * 0.55);
+
+function randomSpawn() {
+  const r = Math.sqrt(Math.random()) * SPAWN_RADIUS;
+  const a = Math.random() * Math.PI * 2;
+  return { x: Math.cos(a) * r, z: Math.sin(a) * r };
+}
 function wrapC(v) {
   if (v > W_HALF - EDGE_BUFFER) return W_HALF - EDGE_BUFFER;
   if (v < -W_HALF + EDGE_BUFFER) return -W_HALF + EDGE_BUFFER;
@@ -129,17 +138,33 @@ function startNewRound() {
 // clients re-join in response to the phase flip; their deadThisRound entry
 // is cleared by startNewRound().
 function resetRound() {
-  // Clear per-round progression in the DB so dead-and-rejoining players
-  // enter the next round with the same clean slate as survivors.
-  db.default.exec('UPDATE players SET souls = 0');
+  // Wipe ALL per-round progression in the DB: souls, persisted allies, and
+  // every upgrade level. Dead-and-rejoining players inherit the same clean
+  // slate as survivors.
+  db.default.exec(`
+    UPDATE players SET
+      souls = 0,
+      upgrade_empower_self = 0,
+      upgrade_empower_allies = 0,
+      upgrade_reinforce_cap = 0
+  `);
   db.default.exec('DELETE FROM allies');
+
+  // Randomize the stored position for everyone still in the DB so dead
+  // players get a fresh spawn when they rejoin after the round restarts.
+  const setPos = db.default.prepare('UPDATE players SET position_x = ?, position_z = ? WHERE id = ?');
+  for (const row of db.default.prepare('SELECT id FROM players').all()) {
+    const s = randomSpawn();
+    setPos.run(s.x, s.z, row.id);
+  }
 
   // Reset surviving (connected) players' in-memory state.
   for (const p of players.values()) {
     p.hp = p.maxHp;
     p.souls = 0;
+    p.upgrades = { empower_self: 0, empower_allies: 0, reinforce_cap: 0 };
     p.allies.clear();
-    p.pos = { x: 0, z: 0 };
+    p.pos = randomSpawn();
   }
 
   startNewRound();
@@ -338,7 +363,7 @@ io.on('connection', (socket) => {
     } else {
       playerState = {
         id: playerId, name,
-        pos: { x: (Math.random() - 0.5) * 20, z: 40 },
+        pos: randomSpawn(),
         yaw: 0,
         hp: 30,
         maxHp: 30,
