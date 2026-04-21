@@ -1,0 +1,86 @@
+name: Deploy server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - server/**
+      - .github/workflows/server-deploy.yml
+  workflow_dispatch:
+
+concurrency:
+  group: server-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  INSTANCE_ID: i-069ca3ce5b4225413
+  API_URL: https://api.necromancer.paulsantomauro.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::653719116478:role/GitHubActions-NecromancerDeploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Send deploy command via SSM
+        id: send
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "github-actions server deploy ${GITHUB_SHA}" \
+            --timeout-seconds 600 \
+            --parameters '{"commands":[
+              "set -euxo pipefail",
+              "cd /opt/necromancer",
+              "sudo -u necromancer git fetch --depth=1 origin main",
+              "sudo -u necromancer git reset --hard origin/main",
+              "cd server",
+              "sudo -u necromancer npm ci --omit=dev",
+              "sudo systemctl restart necromancer"
+            ]}' \
+            --query Command.CommandId --output text)
+          echo "cmd_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM command ID: $CMD_ID"
+
+      - name: Wait for SSM command to finish
+        run: |
+          CMD_ID='${{ steps.send.outputs.cmd_id }}'
+          for i in $(seq 1 60); do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id "$CMD_ID" \
+              --details \
+              --query 'CommandInvocations[0].Status' --output text)
+            echo "[$i] SSM status: $STATUS"
+            case "$STATUS" in
+              Success) exit 0 ;;
+              Cancelled|TimedOut|Failed|Cancelling)
+                aws ssm list-command-invocations --command-id "$CMD_ID" --details \
+                  --query 'CommandInvocations[0].CommandPlugins[0].Output' --output text
+                exit 1 ;;
+            esac
+            sleep 5
+          done
+          echo "SSM command did not finish within 5 minutes"
+          exit 1
+
+      - name: Post-deploy smoke test
+        run: |
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/socket.io/?EIO=4&transport=polling" || echo "000")
+            echo "Attempt $i: HTTP $CODE"
+            if [ "$CODE" = "200" ]; then exit 0; fi
+            sleep 3
+          done
+          echo "Server did not return 200 after restart"
+          exit 1

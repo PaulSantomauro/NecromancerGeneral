@@ -1,0 +1,74 @@
+name: Deploy frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - index.html
+      - vite.config.js
+      - package.json
+      - package-lock.json
+      - .env.production
+      - public/**
+      - .github/workflows/frontend-deploy.yml
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  SITE_BUCKET: necromancer-paulsantomauro-com-site
+  DISTRIBUTION_ID: E2IT38JNK5J4M4
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::653719116478:role/GitHubActions-NecromancerDeploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Long-cache hashed assets, short-cache index.html so new deploys roll out fast.
+      - name: Sync assets (long cache)
+        run: |
+          aws s3 sync dist/ "s3://${SITE_BUCKET}" \
+            --delete \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Upload index.html (short cache)
+        run: |
+          aws s3 cp dist/index.html "s3://${SITE_BUCKET}/index.html" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "public, max-age=60, must-revalidate"
+
+      - name: Invalidate CloudFront
+        run: |
+          INV_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${DISTRIBUTION_ID}" \
+            --paths '/*' \
+            --query 'Invalidation.Id' --output text)
+          echo "Invalidation: $INV_ID"
+
+      - name: Smoke test
+        run: |
+          curl -sSf -o /dev/null -w "HTTP %{http_code}\n" https://necromancer.paulsantomauro.com/
