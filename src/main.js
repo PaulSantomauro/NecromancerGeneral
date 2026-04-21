@@ -373,17 +373,19 @@ function onServerReady(data) {
 }
 let _portalStateRestored = false;
 
-new SplashScreen(({ id, name }) => {
+const splash = new SplashScreen(({ id, name }) => {
   myId = id;
   myName = name;
   hud.setMyId(id);
+
+  const handshake = (data) => { splash.connected(); onServerReady(data); };
 
   net = new NetworkSystem({
     serverUrl: WS_URL,
     playerId: id,
     name,
-    onWelcome: onServerReady,
-    onRestore: onServerReady,
+    onWelcome: handshake,
+    onRestore: handshake,
   });
 }, urlParams);
 

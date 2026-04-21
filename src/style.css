@@ -602,6 +602,21 @@ kbd {
   margin-top: 8px;
 }
 
+.splash-connecting {
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: rgba(240, 216, 255, 0.85);
+  text-align: center;
+  padding: 18px 0;
+  margin: 0;
+}
+.splash-connecting .splash-dots {
+  display: inline-block;
+  margin-left: 2px;
+  animation: splash-pulse 1.1s steps(1) infinite;
+}
+@keyframes splash-pulse { 50% { opacity: 0.25; } }
+
 #splash-name {
   background: rgba(20, 10, 30, 0.92);
   border: 1px solid rgba(180, 100, 255, 0.4);

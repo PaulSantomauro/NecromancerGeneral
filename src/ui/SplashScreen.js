@@ -104,7 +104,7 @@ export class SplashScreen {
       if (!val) { input.classList.add('error'); return; }
       const identity = claimIdentity(val);
       if (!identity) { input.classList.add('error'); return; }
-      this._dismiss();
+      this._showConnecting();
       this._onReady(identity);
     };
 
@@ -115,8 +115,30 @@ export class SplashScreen {
     return el;
   }
 
+  _showConnecting() {
+    if (!this._el) return;
+    const form = this._el.querySelector('.splash-form');
+    if (form) {
+      form.innerHTML = '<p class="splash-connecting" role="status" aria-live="polite">Connecting to server<span class="splash-dots">…</span></p>';
+    }
+    this._slowTimer = setTimeout(() => {
+      const p = this._el?.querySelector('.splash-connecting');
+      if (p) p.textContent = 'Server is waking up, hang tight…';
+    }, 8000);
+  }
+
+  // Called by main.js once the socket has finished the welcome/restore
+  // handshake; dismisses the splash so the player drops into the arena.
+  connected() {
+    if (this._slowTimer) { clearTimeout(this._slowTimer); this._slowTimer = null; }
+    this._dismiss();
+  }
+
   _dismiss() {
+    if (!this._el) return;
     this._el.classList.add('splash-exit');
-    setTimeout(() => this._el.remove(), 400);
+    const el = this._el;
+    this._el = null;
+    setTimeout(() => el.remove(), 400);
   }
 }
