@@ -328,12 +328,6 @@ io.on('connection', (socket) => {
 
     players.set(playerId, playerState);
 
-    // Initialise the player's hostile count at 0 so the PvE->PvP clear-tick
-    // path can fire on hostile kills, not only via the fog-timeout fallback.
-    // Without this, `hostilesByPlayer.size > 0` stays false until the client
-    // has sent its first hostile_count tick.
-    hostilesByPlayer.set(playerId, hostilesByPlayer.get(playerId) ?? 0);
-
     db.upsertPlayer.run({
       id: playerId,
       name: playerState.name,
