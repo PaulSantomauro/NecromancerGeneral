@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { Faction } from './FactionSystem.js';
-import { GameEvent, events } from './EventSystem.js';
 import monstersConfig from '../config/monsters.json';
 
 // Pre-compute weighted type roster once so spawning is O(log n) per pick.
@@ -46,14 +45,6 @@ export class BattleDirector {
 
     this._hostileSpawnTimer = config.hostileSpawnInterval;
     this._allyReinforceTimer = config.allyReinforcementInterval;
-
-    this.killed = 0;
-    this.converted = 0;
-    this.summoned = 0;
-
-    events.subscribe(GameEvent.ENEMY_DIED, () => { this.killed++; });
-    events.subscribe(GameEvent.ENEMY_CONVERTED, () => { this.converted++; });
-    events.subscribe(GameEvent.MINION_SPAWNED, () => { this.summoned++; });
   }
 
   // Returns zones whose outer edge fits inside the current fog radius. A zone
@@ -142,11 +133,8 @@ export class BattleDirector {
       }
     }
 
-    events.emit(GameEvent.BATTLE_TICK, {
-      hostiles, allies,
-      converted: this.converted,
-      summoned: this.summoned,
-      killed: this.killed,
-    });
+    // BATTLE_TICK is authoritative from main.js (which owns localKills and
+    // the live scene counts). Emitting a duplicate here raced with that
+    // emit and overwrote the HUD with stale values on round restart.
   }
 }
