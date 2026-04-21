@@ -720,10 +720,18 @@ function onRoundRestarted() {
   _playerDeathReported = false;
   localKills = 0;
   nextLocalAllyId = 1;
+  battleTickTimer = 0;
 
   battleDirector._seeded = false;
   battleDirector._hostileSpawnTimer = battleConfig.hostileSpawnInterval;
   battleDirector._allyReinforceTimer = battleConfig.allyReinforcementInterval;
+
+  // Force-refresh the HUD so the new round visibly starts at zero instead
+  // of lingering on end-of-round values until the next BATTLE_TICK (up to
+  // 100 ms) or until the server's restore_state reply arrives.
+  events.emit(GameEvent.BATTLE_TICK, { hostiles: 0, allies: 0, killed: 0 });
+  events.emit(GameEvent.SOULS_CHANGED, { total: 0, delta: 0 });
+  events.emit(GameEvent.UPGRADE_PURCHASED, { key: '_restore', newLevel: 0 });
 
   if (net) net.rejoin();
 }
