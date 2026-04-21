@@ -40,9 +40,6 @@ function wrapPos(p) { p.x = wrapC(p.x); p.z = wrapC(p.z); return p; }
 function tDelta(ax, az, bx, bz) {
   return { dx: bx - ax, dz: bz - az };
 }
-const SK_BODY_RADIUS = 0.55;
-const SK_BODY_LOW = -0.2;
-const SK_BODY_HIGH = 1.8;
 const PLAYER_BODY_RADIUS = 0.85;
 const PLAYER_BODY_LOW = -0.2;
 const PLAYER_BODY_HIGH = 1.9;
@@ -53,24 +50,37 @@ const TICK_HZ           = 20;
 const TICK_MS           = 1000 / TICK_HZ;
 const FLUSH_MS          = 8000;
 const OFFLINE_WINDOW_MS = 2 * 60 * 60 * 1000;
-
-const HOSTILE_SPAWN_MS  = 4000;
-const HOSTILE_CAP       = 80;
-const HOSTILE_BATCH     = 3;
-
 const RESTART_DELAY_MS  = 30000;
 
-const HOSTILE_ZONES = [
-  { cx: 0,   cz: -80, r: 15 },
-  { cx: -60, cz: -70, r: 12 },
-  { cx: 60,  cz: -70, r: 12 },
-];
+// ── Rate limiting (token bucket per socket) ────────────────────────────────
+// Guards against a malicious client emitting thousands of events/sec. Buckets
+// are hung off the socket id and deleted on disconnect.
+const FIRE_RATE_CAPACITY = 45;        // burst
+const FIRE_RATE_REFILL   = 30;        // tokens/sec sustained
+const KILL_RATE_CAPACITY = 20;
+const KILL_RATE_REFILL   = 15;
+const rateBuckets = new Map(); // socket.id -> { fire: {...}, kill: {...} }
+
+function takeToken(socket, key, capacity, refill) {
+  let b = rateBuckets.get(socket.id);
+  if (!b) { b = {}; rateBuckets.set(socket.id, b); }
+  const now = Date.now();
+  let bucket = b[key];
+  if (!bucket) {
+    bucket = { tokens: capacity, t: now };
+    b[key] = bucket;
+  }
+  const elapsed = (now - bucket.t) / 1000;
+  bucket.tokens = Math.min(capacity, bucket.tokens + elapsed * refill);
+  bucket.t = now;
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
 
 // ── In-memory world ────────────────────────────────────────────────────────
 const players = new Map();
-const skeletons = new Map();
 const projectilesById = new Map();
-let nextSkeletonId = 1;
 let nextProjectileId = 1;
 
 // ── Round state (battle-royale) ────────────────────────────────────────────
@@ -204,40 +214,6 @@ function serializeRound() {
   };
 }
 
-function spawnSkeleton(faction, pos, ownerId, tier = 0) {
-  const id = nextSkeletonId++;
-  const patrolCenter = { x: pos.x, z: pos.z };
-  const sk = {
-    id,
-    faction,
-    pos: { x: pos.x, z: pos.z },
-    hp: faction === 'hostile' ? 1 : Math.max(1, Math.round(1 * (1 + tier * 0.3))),
-    maxHp: faction === 'hostile' ? 1 : Math.max(1, Math.round(1 * (1 + tier * 0.3))),
-    ownerId,
-    tier,
-    attackRange: 2.5,
-    attackDuration: 0.8,
-    attackTimer: 0,
-    isAttacking: false,
-    cooldownTimer: 0,
-    damage: 1 * (1 + tier * 0.3),
-    moveSpeed: 7 * (0.9 + Math.random() * 0.2),
-    aggroRadius: 22,
-    patrolRadius: 7,
-    patrolCenter,
-    patrolTarget: null,
-    patrolTimer: 0,
-    guardRadius: 12,
-    engageRadius: 10,
-    guardIdleTarget: null,
-    guardIdleTimer: 0,
-    attackTargetId: null,
-    attackTargetKind: null, // 'skeleton' | 'player'
-  };
-  skeletons.set(id, sk);
-  return id;
-}
-
 // ── Hydrate world from SQLite ───────────────────────────────────────────────
 function hydrateWorld() {
   const cutoff = Date.now() - OFFLINE_WINDOW_MS;
@@ -267,29 +243,6 @@ function hydrateWorld() {
   console.log(`[world] hydrated — ${players.size} offline generals (skeletons are client-local)`);
 }
 
-function seedHostiles() {
-  const hostileCount = [...skeletons.values()].filter(s => s.faction === 'hostile').length;
-  const toSpawn = Math.max(0, 20 - hostileCount);
-  for (let i = 0; i < toSpawn; i++) {
-    const z = HOSTILE_ZONES[i % HOSTILE_ZONES.length];
-    const angle = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(Math.random()) * z.r;
-    spawnSkeleton('hostile', { x: z.cx + Math.cos(angle) * r, z: z.cz + Math.sin(angle) * r }, null, 0);
-  }
-}
-
-function persistAllies(ownerId) {
-  const p = players.get(ownerId);
-  if (!p) return;
-  db.deleteAllies.run(ownerId);
-  for (const sid of p.allies) {
-    const sk = skeletons.get(sid);
-    if (sk && sk.hp > 0) {
-      db.insertAlly.run(ownerId, sk.pos.x, sk.pos.z, sk.tier, sk.hp, sk.type ?? 'skeleton');
-    }
-  }
-}
-
 function serializePlayer(p) {
   return {
     id: p.id,
@@ -304,21 +257,18 @@ function serializePlayer(p) {
   };
 }
 
-function serializeSkeleton(s) {
-  return {
-    id: s.id,
-    faction: s.faction,
-    pos: s.pos,
-    hp: s.hp,
-    maxHp: s.maxHp,
-    ownerId: s.ownerId,
-    tier: s.tier,
-  };
-}
-
 // ── Socket.io setup ─────────────────────────────────────────────────────────
 const httpServer = createServer();
-const io = new Server(httpServer, { cors: { origin: '*' } });
+// CORS is locked to the production client + common local dev origins so a
+// random attacker site can't open sockets against this server.
+const ALLOWED_ORIGINS = [
+  'https://necromancer.paulsantomauro.com',
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4173',
+];
+const io = new Server(httpServer, { cors: { origin: ALLOWED_ORIGINS } });
 
 io.on('connection', (socket) => {
   console.log(`[io] connection ${socket.id}`);
@@ -377,6 +327,12 @@ io.on('connection', (socket) => {
     }
 
     players.set(playerId, playerState);
+
+    // Initialise the player's hostile count at 0 so the PvE->PvP clear-tick
+    // path can fire on hostile kills, not only via the fog-timeout fallback.
+    // Without this, `hostilesByPlayer.size > 0` stays false until the client
+    // has sent its first hostile_count tick.
+    hostilesByPlayer.set(playerId, hostilesByPlayer.get(playerId) ?? 0);
 
     db.upsertPlayer.run({
       id: playerId,
@@ -443,36 +399,34 @@ io.on('connection', (socket) => {
     hostilesByPlayer.set(playerId, Math.max(0, Math.floor(count)));
   });
 
-  // Client-authoritative self-death — for damage sources the server doesn't
-  // simulate (fog, local hostile melee, etc). The killed player reports the
-  // event; server treats it as authoritative and runs the death pipeline.
-  socket.on('player_died', ({ playerId, killedBy }) => {
+  // Client-authoritative self-death — only for damage sources the server
+  // doesn't simulate (fog, local hostile melee during PvE). During PvP the
+  // server owns HP, so a live player claiming to be dead is always bogus.
+  // Killer attribution is intentionally dropped here: the PvP bullet sim
+  // (applyProjectileHit) calls killGeneral with the verified owner, which is
+  // the only path allowed to credit souls for a kill.
+  socket.on('player_died', ({ playerId }) => {
     const p = players.get(playerId);
     if (!p || p.socketId !== socket.id) return;
+    if (p.hp <= 0) return;       // idempotent - already processed
+    if (round.phase === 'pvp') return;
     p.hp = 0;
-    killGeneral(p, killedBy || null);
+    killGeneral(p, null);
   });
 
-  socket.on('claim_souls', ({ playerId, total }) => {
+  // Server-authoritative soul credit for client-simulated hostile kills.
+  // Bounty is clamped to the legitimate range (monsters.json soulValues top
+  // out at 8 for the giant) and rate-limited so a malicious client can't
+  // farm souls by spamming this event.
+  socket.on('hostile_killed', ({ playerId, bounty }) => {
     const p = players.get(playerId);
     if (!p || p.socketId !== socket.id) return;
-    if (typeof total !== 'number' || total < 0) return;
-    p.souls = Math.floor(total);
+    if (!takeToken(socket, 'kill', KILL_RATE_CAPACITY, KILL_RATE_REFILL)) return;
+    const b = Math.max(0, Math.min(8, Math.floor(Number(bounty) || 0)));
+    if (b === 0) return;
+    p.souls += b;
     db.updateSoulsAbs.run(p.souls, playerId);
-  });
-
-  socket.on('claim_upgrade', ({ playerId, key, newLevel }) => {
-    const p = players.get(playerId);
-    if (!p || p.socketId !== socket.id) return;
-    if (!(key in (p.upgrades || {}))) return;
-    if (typeof newLevel !== 'number' || newLevel < 0) return;
-    p.upgrades[key] = newLevel;
-    db.saveUpgrade.run({
-      id: playerId,
-      empower_self:   p.upgrades.empower_self,
-      empower_allies: p.upgrades.empower_allies,
-      reinforce_cap:  p.upgrades.reinforce_cap,
-    });
+    io.to(ROOM).emit('souls_granted', { playerId, amount: b, total: p.souls });
   });
 
   socket.on('upgrade_purchase', ({ playerId, key }) => {
@@ -502,6 +456,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    rateBuckets.delete(socket.id);
     for (const [pid, p] of players) {
       if (p.socketId !== socket.id) continue;
       // During PvP, a disconnect counts as a forfeit/death so a single
@@ -516,7 +471,6 @@ io.on('connection', (socket) => {
       db.setDisconnected.run(Date.now(), pid);
       db.updatePosition.run(p.pos.x, p.pos.z, Date.now(), pid);
       db.updateSoulsAbs.run(p.souls, pid);
-      persistAllies(pid);
       io.to(ROOM).emit('player_left', { playerId: pid });
       console.log(`[io] ${p.name} (${pid.slice(0, 8)}) disconnected`);
       break;
@@ -528,7 +482,24 @@ io.on('connection', (socket) => {
 function handleFire(socket, { playerId, ammoKey, origin, direction, targetPoint }) {
   const shooter = players.get(playerId);
   if (!shooter || shooter.socketId !== socket.id) return;
-  if (!ammoConfig[ammoKey]) return;
+  const cfg = ammoConfig[ammoKey];
+  if (!cfg) return;
+
+  // Per-socket token bucket. Caps server-side projectile spawns and relay
+  // traffic at a sane rate even if a malicious client ignores the client's
+  // own fireInterval throttle.
+  if (!takeToken(socket, 'fire', FIRE_RATE_CAPACITY, FIRE_RATE_REFILL)) return;
+
+  // Server-authoritative ammo soul cost. Summon and conversion ammo cost
+  // souls — deduct here instead of trusting the client so an attacker can't
+  // fire those ammos for free. Reject the whole event if insufficient.
+  const soulCost = Math.max(0, Math.floor(cfg.soulCost ?? 0));
+  if (soulCost > 0) {
+    if (shooter.souls < soulCost) return;
+    shooter.souls -= soulCost;
+    db.updateSoulsAbs.run(shooter.souls, playerId);
+    io.to(ROOM).emit('souls_granted', { playerId, amount: -soulCost, total: shooter.souls });
+  }
 
   // Broadcast the fire to every other client so they can render a local tracer
   socket.to(ROOM).emit('player_fire_remote', {

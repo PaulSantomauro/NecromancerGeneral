@@ -43,6 +43,17 @@ function refHost(refUrl) {
   }
 }
 
+// Accept only http(s) URLs so we can't redirect into javascript:, data:,
+// file:, or any other protocol that would execute in window.location.href.
+function isSafeHttpUrl(s) {
+  try {
+    const u = new URL(s);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 function buildPortalMesh(scene, { position, color, labelText, labelColor }) {
   const group = new THREE.Group();
   group.position.copy(position);
@@ -116,10 +127,14 @@ export class PortalSystem {
     });
     this._exitArmedAt = this._time + ARM_DELAY;
 
-    // Entry/return portal only when we arrived from somewhere.
+    // Entry/return portal only when we arrived from somewhere. `ref` lands
+    // in window.location.href on portal contact, so anything that isn't an
+    // http(s) URL is a redirect vector (javascript:, data:, or a phishing
+    // host dressed up as the webring). Drop the portal entirely if invalid;
+    // the exit ring is still there so the player can leave via the webring.
     const ref = this._params?.get('ref');
     const fromPortal = this._params?.get('portal') === 'true';
-    if (fromPortal && ref) {
+    if (fromPortal && ref && isSafeHttpUrl(ref)) {
       this._entry = buildPortalMesh(this._scene, {
         position: new THREE.Vector3(0, 0, -8),
         color: 0x3ad1ff,
@@ -163,6 +178,7 @@ export class PortalSystem {
   }
 
   _fire(targetUrl) {
+    if (!isSafeHttpUrl(targetUrl)) return;
     this._redirecting = true;
     const params = new URLSearchParams();
     if (this._playerName) params.set('username', this._playerName);

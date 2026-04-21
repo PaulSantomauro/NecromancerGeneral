@@ -278,10 +278,16 @@ events.subscribe(GameEvent.ENEMY_CONVERTED, ({ skeleton }) => {
   }
 });
 
-// Local kill counter — every hostile death I caused (or any local hostile death) ticks it
+// Local kill counter — every hostile death I caused (or any local hostile death) ticks it.
+// Server-authoritative soul credit: the server is the source of truth for
+// soul totals, so we forward each hostile kill's bounty and wait for the
+// server's souls_granted echo (handled in NET_SOULS_GRANTED below) to update
+// the local count.
 events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton }) => {
   if (!skeleton) return;
-  if (skeleton.faction === Faction.HOSTILE) localKills++;
+  if (skeleton.faction !== Faction.HOSTILE) return;
+  localKills++;
+  if (net) net.sendHostileKilled(skeleton.soulValue ?? 1);
 });
 
 // Camera shake on self-damage. Amplitude scales with hit size; capped so
@@ -306,6 +312,11 @@ events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton }) => {
 
 // ── Splash → network boot ──────────────────────────────────────────────────
 function onServerReady(data) {
+  // Flip the progression system into networked mode: local purchases become
+  // server requests, hostile-kill bounties come back via NET_SOULS_GRANTED,
+  // and upgrade effects apply only after the server's upgrade_applied echo.
+  progression.setNetworked(true);
+
   reconcileRemotes(data);
   progression._overrideSouls(data.player.souls);
   progression._overrideUpgrades(data.player.upgrades);
@@ -395,14 +406,16 @@ events.subscribe(GameEvent.PLAYER_FIRED, (payload) => {
   net.sendFire(payload.ammoKey, payload.origin, payload.direction, payload.targetPoint);
 });
 
+// Upgrade purchases are server-authoritative: when the local progression
+// system runs in networked mode it fires UPGRADE_PURCHASED with
+// `_request: true` and no local effect applied. We forward the request to
+// the server, which validates the soul cost and broadcasts upgrade_applied
+// back (handled in NET_UPGRADE_APPLIED below).
 events.subscribe(GameEvent.UPGRADE_PURCHASED, (payload) => {
-  if (!net || !payload.key || payload.key === '_restore') return;
-  net.sendClaimUpgrade(payload.key, payload.newLevel);
-});
-
-events.subscribe(GameEvent.SOULS_CHANGED, ({ total }) => {
-  if (!net || total == null) return;
-  net.sendClaimSouls(total);
+  if (!net || !payload || !payload.key) return;
+  if (payload.key === '_restore') return;
+  if (!payload._request) return;
+  net.sendUpgrade(payload.key);
 });
 
 // ── Net event handlers ─────────────────────────────────────────────────────
@@ -457,6 +470,22 @@ events.subscribe(GameEvent.NET_STATE_TICK, ({ players: serverPlayers, round: ser
       remoteGenerals.delete(id);
     }
   }
+});
+
+// Server reconciles soul counts whenever anything (hostile kill bounty,
+// ammo spend, upgrade purchase, PvP kill bounty) changes the stored total
+// for the local player. `amount` may be negative for deductions.
+events.subscribe(GameEvent.NET_SOULS_GRANTED, ({ playerId, amount, total }) => {
+  if (playerId !== myId) return;
+  progression._grantSoulsFromServer(amount ?? 0, total);
+});
+
+// upgrade_applied is the server's confirmation that a purchase went through.
+// Apply the effect and reconcile souls to the server's authoritative total.
+events.subscribe(GameEvent.NET_UPGRADE_APPLIED, ({ playerId, key, newLevel, souls }) => {
+  if (playerId !== myId) return;
+  progression.applyServerUpgrade(key, newLevel);
+  if (typeof souls === 'number') progression._overrideSouls(souls);
 });
 
 events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {

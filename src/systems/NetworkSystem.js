@@ -69,20 +69,11 @@ export class NetworkSystem {
     });
   }
 
-  sendClaimSouls(total) {
+  sendHostileKilled(bounty) {
     if (!this.connected) return;
-    this.socket.emit('claim_souls', {
+    this.socket.emit('hostile_killed', {
       playerId: this.playerId,
-      total,
-    });
-  }
-
-  sendClaimUpgrade(key, newLevel) {
-    if (!this.connected) return;
-    this.socket.emit('claim_upgrade', {
-      playerId: this.playerId,
-      key,
-      newLevel,
+      bounty,
     });
   }
 
