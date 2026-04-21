@@ -1,8 +1,30 @@
 import { getIdentity, claimIdentity } from '../systems/Identity.js';
 
+// Picks a stable-ish placeholder name for portal arrivals that didn't send a
+// `username` parameter. Uses crypto-random bytes for uniqueness on the wire
+// so two nameless arrivals don't collide on the server's name→id map.
+function generateWandererName() {
+  const rnd = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `Wanderer-${rnd}`;
+}
+
 export class SplashScreen {
-  constructor(onReady) {
+  // `params` is an optional URLSearchParams. When present with portal=true,
+  // we bypass the DOM splash entirely so the player drops straight into the
+  // arena (the jam's webring requires no input screens on portal arrival).
+  constructor(onReady, params = null) {
     this._onReady = onReady;
+
+    if (params && params.get('portal') === 'true') {
+      const raw = params.get('username') || '';
+      const name = raw.trim().slice(0, 20) || generateWandererName();
+      const identity = claimIdentity(name) || claimIdentity(generateWandererName());
+      // queueMicrotask lets the caller finish wiring before onReady fires,
+      // matching the timing of the normal (button-click) path.
+      queueMicrotask(() => this._onReady(identity));
+      return;
+    }
+
     this._el = this._build();
     document.body.appendChild(this._el);
   }

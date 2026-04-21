@@ -19,8 +19,15 @@ import battleConfig from './config/battle.json';
 import { wrapPosition, closestWrap, toroidalDelta } from './systems/Toroid.js';
 import { FxPool } from './systems/FxPool.js';
 import { ScreenShake } from './systems/ScreenShake.js';
+import { PortalSystem } from './systems/PortalSystem.js';
 
 const WS_URL = import.meta.env?.VITE_WS_URL || 'http://localhost:2567';
+
+// Query parameters carry state when the player arrives via the Vibe Jam
+// webring (?portal=true&ref=…&username=…&hp=…&rotation_y=…). Parsed once
+// and shared with SplashScreen + PortalSystem.
+const urlParams = new URLSearchParams(window.location.search);
+const arrivedViaPortal = urlParams.get('portal') === 'true';
 
 // ── Scene bootstrap ───────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -56,6 +63,8 @@ let localKills = 0;
 let nextLocalAllyId = 1;
 let myId = null;
 let net = null;
+let portals = null;
+let myName = null;
 
 const playerStats = new PlayerStats();
 
@@ -332,12 +341,41 @@ function onServerReady(data) {
   // click unnecessarily.
   if (!player.controls.isLocked) hud.showLockPrompt(true);
 
+  // Build the Vibe Jam portals once, after the player is in the arena.
+  // Rebuilding on round restart would duplicate meshes; onRoundRestarted
+  // doesn't clear them and it doesn't need to — fixed world position.
+  if (!portals) {
+    portals = new PortalSystem({
+      scene, player, params: urlParams, playerName: myName,
+    });
+    portals.init();
+  }
+
+  // One-shot portal-state restore: only on the first onServerReady after
+  // the page loaded with ?portal=true. Subsequent rejoins (round restart)
+  // should not re-apply these.
+  if (arrivedViaPortal && !_portalStateRestored) {
+    _portalStateRestored = true;
+    const hpRaw = Number(urlParams.get('hp'));
+    if (Number.isFinite(hpRaw) && hpRaw >= 1 && hpRaw <= 100) {
+      // Scale the inbound 1..100 hp onto our local maxHp scale.
+      const scaled = (hpRaw / 100) * player.stats.maxHp;
+      player.stats.setHp(scaled);
+    }
+    const yawRaw = Number(urlParams.get('rotation_y'));
+    if (Number.isFinite(yawRaw)) {
+      player.controls.getObject().rotation.y = yawRaw;
+    }
+  }
+
   // Broadcast our allies so other connected players can see them
   setTimeout(() => broadcastAllyState(), 100);
 }
+let _portalStateRestored = false;
 
 new SplashScreen(({ id, name }) => {
   myId = id;
+  myName = name;
   hud.setMyId(id);
 
   net = new NetworkSystem({
@@ -347,7 +385,7 @@ new SplashScreen(({ id, name }) => {
     onWelcome: onServerReady,
     onRestore: onServerReady,
   });
-});
+}, urlParams);
 
 // ── Input → network forwarding ─────────────────────────────────────────────
 events.subscribe(GameEvent.PLAYER_FIRED, (payload) => {
@@ -849,6 +887,7 @@ function animate() {
   }
 
   FxPool.update(dt);
+  if (portals) portals.update(dt);
 
   // Shake is applied after all camera positioning has settled. The offset
   // gets overwritten on the next frame by the usual player-follow update,
