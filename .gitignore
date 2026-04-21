@@ -25,3 +25,13 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# CDK build artifacts
+infra/cdk.out/
+infra/node_modules/
+infra/*.js
+infra/*.d.ts
+infra/bin/*.js
+infra/bin/*.d.ts
+infra/lib/*.js
+infra/lib/*.d.ts
