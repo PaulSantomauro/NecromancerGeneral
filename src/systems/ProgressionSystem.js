@@ -35,8 +35,9 @@ export class ProgressionSystem {
     this.allyTier = 0;
     this.networked = false;
 
-    events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton }) => {
+    events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton, cause }) => {
       if (this.networked) return;
+      if (cause === 'fog') return; // environmental death, no bounty
       if (skeleton && skeleton.faction === Faction.HOSTILE) {
         // Bounty scales per-type via `soulValue` on the Skeleton (see
         // monsters.json): skeleton/runner 1 → stalker 2 → brute 4 → giant 8.

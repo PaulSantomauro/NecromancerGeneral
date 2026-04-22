@@ -338,9 +338,14 @@ events.subscribe(GameEvent.ENEMY_CONVERTED, ({ skeleton }) => {
 // soul totals, so we forward each hostile kill's bounty and wait for the
 // server's souls_granted echo (handled in NET_SOULS_GRANTED below) to update
 // the local count.
-events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton }) => {
+events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton, cause }) => {
   if (!skeleton) return;
   if (skeleton.faction !== Faction.HOSTILE) return;
+  // Environmental deaths (fog) don't belong to the player — they weren't
+  // earned by the player or their allies, so no kill credit and no soul
+  // bounty. The hostile still fires its own death visual via ENEMY_DIED;
+  // this guard only skips the scoring side effects.
+  if (cause === 'fog') return;
   localKills++;
   if (net) net.sendHostileKilled(skeleton.soulValue ?? 1);
 });
@@ -931,7 +936,7 @@ function animate() {
     for (const s of skeletons) {
       if (!s.alive || !s.behaviorTree) continue;
       const sd = Math.hypot(s.position.x, s.position.z);
-      if (sd > fogR) s.takeDamage(dps * dt);
+      if (sd > fogR) s.takeDamage(dps * dt, 'fog');
     }
   }
 
