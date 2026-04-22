@@ -51,6 +51,11 @@ const TICK_MS           = 1000 / TICK_HZ;
 const FLUSH_MS          = 8000;
 const OFFLINE_WINDOW_MS = 2 * 60 * 60 * 1000;
 const RESTART_DELAY_MS  = 30000;
+// Grace window for a "straggler" PvP trigger: if any player's local horde
+// has been cleared (count == 0) continuously for this long while others
+// still have hostiles, flip to PvP anyway so the cleared player isn't stuck
+// waiting. The fast-path "everyone at 0" transition still runs in ~100ms.
+const CLEAR_GRACE_MS    = 15000;
 
 // ── Rate limiting (token bucket per socket) ────────────────────────────────
 // Guards against a malicious client emitting thousands of events/sec. Buckets
@@ -115,6 +120,10 @@ const round = {
 };
 // Aggregated hostile count from connected clients — refreshed by hostile_count.
 const hostilesByPlayer = new Map(); // pid → count
+// Timestamp when each player's local count first dropped to zero (and has
+// stayed there). Cleared on any > 0 report. Drives the straggler-grace PvP
+// trigger — see CLEAR_GRACE_MS.
+const playerClearedAt = new Map(); // pid → epoch ms
 // Players who died this round; rejected from rejoin as active generals until round end.
 const deadThisRound = new Set();
 
@@ -173,6 +182,7 @@ function goIdle() {
   round.pveOvertime = 0;
   round.hostilesSeen = false;
   hostilesByPlayer.clear();
+  playerClearedAt.clear();
   deadThisRound.clear();
   console.log('[round] idle — waiting for players');
 }
@@ -189,6 +199,7 @@ function startNewRound() {
   round.pveOvertime = 0;
   round.hostilesSeen = false;
   hostilesByPlayer.clear();
+  playerClearedAt.clear();
   deadThisRound.clear();
 }
 
@@ -272,6 +283,10 @@ function serializeRound() {
     winnerId:       round.winnerId,
     restartAt:      round.restartAt,
     aliveGenerals:  activeGeneralCount(),
+    // Aggregate hostiles-across-the-whole-field count. Clients use this to
+    // tell a cleared player "others are still fighting" rather than leaving
+    // them staring at "0 hostiles" wondering why PvP hasn't started.
+    totalHostiles:  totalHostiles(),
   };
 }
 
@@ -463,7 +478,16 @@ io.on('connection', (socket) => {
     const p = players.get(playerId);
     if (!p || p.socketId !== socket.id) return;
     if (typeof count !== 'number') return;
-    hostilesByPlayer.set(playerId, Math.max(0, Math.floor(count)));
+    const c = Math.max(0, Math.floor(count));
+    hostilesByPlayer.set(playerId, c);
+    // Latch the first time this player hits zero (and keep the timestamp
+    // across subsequent zero reports). Any non-zero report resets the latch.
+    // Consumed by tickRound to fire the straggler-grace PvP transition.
+    if (c === 0) {
+      if (!playerClearedAt.has(playerId)) playerClearedAt.set(playerId, Date.now());
+    } else {
+      playerClearedAt.delete(playerId);
+    }
   });
 
   // Client-authoritative self-death — only for damage sources the server
@@ -539,6 +563,7 @@ io.on('connection', (socket) => {
       // stale number keeps `totalHostiles()` positive forever and blocks
       // the fast PvE→PvP clear transition after they leave.
       hostilesByPlayer.delete(pid);
+      playerClearedAt.delete(pid);
       db.setDisconnected.run(Date.now(), pid);
       db.updatePosition.run(p.pos.x, p.pos.z, Date.now(), pid);
       db.updateSoulsAbs.run(p.souls, pid);
@@ -814,6 +839,7 @@ function killGeneral(target, killerId) {
   io.to(ROOM).emit('general_died', { playerId: target.id, killedBy: killerId || null });
   players.delete(target.id);
   hostilesByPlayer.delete(target.id);
+  playerClearedAt.delete(target.id);
   if (killerId) {
     const shooter = players.get(killerId);
     if (shooter) {
@@ -918,6 +944,20 @@ function tickRound(dt) {
     if (fogAtMin) {
       round.pveOvertime += dt;
       if (round.pveOvertime >= PVE_TIMEOUT) transitionToPvp();
+    }
+
+    // Condition 3 (straggler grace): any player has been at 0 hostiles for
+    // CLEAR_GRACE_MS while others still have some. Without this, a fast
+    // clearer has nothing to do until the slowest player catches up — the
+    // grace bounds how long that awkward wait can get.
+    if (round.hostilesSeen && round.phase === 'pve') {
+      const now = Date.now();
+      for (const ts of playerClearedAt.values()) {
+        if (now - ts >= CLEAR_GRACE_MS) {
+          transitionToPvp();
+          break;
+        }
+      }
     }
   }
 

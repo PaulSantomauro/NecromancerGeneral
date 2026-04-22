@@ -220,6 +220,7 @@ const roundState = {
   winnerId: null,
   restartAt: 0,
   aliveGenerals: 1,
+  totalHostiles: 0,
   ended: false,
 };
 
@@ -501,6 +502,7 @@ events.subscribe(GameEvent.NET_STATE_TICK, ({ players: serverPlayers, round: ser
     roundState.winnerId = serverRound.winnerId;
     roundState.restartAt = serverRound.restartAt ?? 0;
     roundState.aliveGenerals = serverRound.aliveGenerals;
+    roundState.totalHostiles = serverRound.totalHostiles ?? 0;
     if (!wasEnded && roundState.phase === 'ended') {
       events.emit(GameEvent.NET_ROUND_ENDED, { winnerId: serverRound.winnerId, restartAt: serverRound.restartAt });
     }
