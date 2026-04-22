@@ -230,7 +230,7 @@ export class HUD {
       // Seed the countdown subtitle so there's no blank frame before _renderRound ticks.
       const secs = restartAt
         ? Math.max(0, Math.ceil((restartAt - Date.now()) / 1000))
-        : 30;
+        : 15;
       this.roundOverlaySub.textContent = `New round in ${secs}s`;
       this._renderLeaderboard(winnerId);
     });

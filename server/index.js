@@ -50,7 +50,7 @@ const TICK_HZ           = 20;
 const TICK_MS           = 1000 / TICK_HZ;
 const FLUSH_MS          = 8000;
 const OFFLINE_WINDOW_MS = 2 * 60 * 60 * 1000;
-const RESTART_DELAY_MS  = 30000;
+const RESTART_DELAY_MS  = 15000;
 // Grace window for a "straggler" PvP trigger: if any player's local horde
 // has been cleared (count == 0) continuously for this long while others
 // still have hostiles, flip to PvP anyway so the cleared player isn't stuck
@@ -357,7 +357,7 @@ io.on('connection', (socket) => {
     // display the spectator/winner banner, then stop. Denial applies in
     // every phase until `startNewRound()` clears `deadThisRound` — the
     // previous `phase !== 'ended'` guard let a dead player reload during
-    // the 30s post-round window and re-enter as a live general.
+    // the 15s post-round window and re-enter as a live general.
     if (deadThisRound.has(playerId)) {
       socket.emit('rejoin_denied', {
         reason: 'dead_this_round',
