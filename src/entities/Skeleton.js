@@ -785,10 +785,15 @@ export class Skeleton {
     }
   }
 
-  takeDamage(amount) {
+  // `cause` is passed through to die() so the ENEMY_DIED subscriber can tell
+  // fog/environmental deaths apart from player-caused kills. Always overwrite
+  // so the final damage source wins — a hostile that ate fog damage but was
+  // finished off by a bullet should still credit the shooter, not the fog.
+  takeDamage(amount, cause = null) {
     if (!this.alive) return;
     this.stats.takeDamage(amount);
     this._hitFlash = 3;
+    this._deathCause = cause;
     events.emit(GameEvent.ENEMY_HIT, { skeleton: this, amount });
     if (!this.stats.isAlive()) this.die();
   }
@@ -818,7 +823,7 @@ export class Skeleton {
       spread: 1.4, lifetime: 0.55, kind: 'dust', velocityY: 1.0, gravity: false,
     });
 
-    events.emit(GameEvent.ENEMY_DIED, { skeleton: this });
+    events.emit(GameEvent.ENEMY_DIED, { skeleton: this, cause: this._deathCause ?? null });
   }
 
   isRemovable() {
