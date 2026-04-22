@@ -106,6 +106,12 @@ const round = {
   clearTicks: 0,
   // How long PvE has continued after fog reached the minimum radius.
   pveOvertime: 0,
+  // Flips to true the first time any client reports > 0 hostiles. Guards the
+  // "all-cleared → PvP" path against the race where a fresh joiner reports 0
+  // hostiles (once per second) before BattleDirector spawns its first batch
+  // (every 1.75s). Without this, a solo join could trip the clear condition
+  // in ~100ms and insta-flip to PvP with a fake victory.
+  hostilesSeen: false,
 };
 // Aggregated hostile count from connected clients — refreshed by hostile_count.
 const hostilesByPlayer = new Map(); // pid → count
@@ -155,6 +161,7 @@ function goIdle() {
   round.restartAt = 0;
   round.clearTicks = 0;
   round.pveOvertime = 0;
+  round.hostilesSeen = false;
   hostilesByPlayer.clear();
   deadThisRound.clear();
   console.log('[round] idle — waiting for players');
@@ -170,6 +177,7 @@ function startNewRound() {
   round.restartAt = 0;
   round.clearTicks = 0;
   round.pveOvertime = 0;
+  round.hostilesSeen = false;
   hostilesByPlayer.clear();
   deadThisRound.clear();
 }
@@ -796,14 +804,25 @@ function killGeneral(target, killerId) {
 }
 
 function maybeEndRound() {
-  if (round.phase !== 'pvp') return;
+  if (round.phase !== 'pvp' && round.phase !== 'pve') return;
   // Require the survivor to still be connected. A disconnected socket's
   // player is already removed from `players` via killGeneral, but guarding
   // on `p.connected` is defensive against a mid-tick disconnect where the
   // cleanup hasn't fired yet.
   const alive = [...players.values()].filter(p => p.connected && p.hp > 0);
-  if (alive.length <= 1) {
-    endRound(alive[0]?.id ?? null);
+  if (round.phase === 'pvp') {
+    // Last standing wins (and a mutual kill with nobody left ends with null).
+    if (alive.length <= 1) endRound(alive[0]?.id ?? null);
+    return;
+  }
+  // PvE: only called via killGeneral, so "alive.length === 0" means the
+  // death that triggered this call was the last survivor (e.g., a solo
+  // player eaten by fog). Without this the round wedges in PvE forever
+  // with no survivor — fog-timeout would eventually rescue it, but ending
+  // now is cleaner. If nobody's connected anymore, the disconnect handler
+  // will immediately overwrite this with goIdle; harmless.
+  if (alive.length === 0) {
+    endRound(null);
   }
 }
 
@@ -852,18 +871,15 @@ function tickRound(dt) {
   if (round.phase === 'pve') {
     round.fogRadius = computeFogRadius();
 
-    // Solo (or empty) PvE: don't progress toward PvP. A lone player would
-    // instantly "win" on the PvP flip (alive.length <= 1). Hold the PvE
-    // counters at zero so the round doesn't pop into PvP the moment a
-    // second player joins either.
-    if (connectedPlayerCount() < 2) {
-      round.clearTicks = 0;
-      round.pveOvertime = 0;
-      return;
-    }
+    // Latch the first time real hostiles are reported. Distinguishes "player
+    // cleared the arena" from "player joined before BattleDirector's 1.75s
+    // spawn timer and happened to report 0 hostiles in the meantime." Without
+    // this, a solo join tripped the clear condition instantly.
+    if (totalHostiles() > 0) round.hostilesSeen = true;
 
-    // Condition 1: all clients report zero hostiles for CLEAR_TICKS ticks.
-    if (hostilesByPlayer.size > 0 && totalHostiles() === 0) {
+    // Condition 1: all clients report zero hostiles for CLEAR_TICKS ticks,
+    // AND hostiles actually spawned at some point this round.
+    if (round.hostilesSeen && hostilesByPlayer.size > 0 && totalHostiles() === 0) {
       round.clearTicks++;
       if (round.clearTicks >= CLEAR_TICKS) transitionToPvp();
     } else {
