@@ -85,12 +85,16 @@ let nextProjectileId = 1;
 
 // ── Round state (battle-royale) ────────────────────────────────────────────
 // Single active round per server process. Phase progresses:
+//   idle — no one connected; tick loop parked, nothing advances. Boot starts
+//          here and the server returns here whenever the last player leaves,
+//          so the server never plays a round by itself.
 //   pve  — all generals allied, fog shrinking, hostiles spawn inside fog
 //   pvp  — all generals turn on each other (triggered when hostiles cleared
-//          or pveTimeoutSeconds elapsed after fog reached min)
+//          or pveTimeoutSeconds elapsed after fog reached min). Gated on
+//          ≥2 connected players so a solo player can't instantly "win".
 //   ended — one general left standing; winnerId is set
 const round = {
-  phase: 'pve',
+  phase: 'idle',
   fogRadius: FOG_START,
   startedAt: Date.now(),
   pvpStartedAt: 0,
@@ -126,6 +130,34 @@ function activeGeneralCount() {
     if (p.hp > 0) n++;
   }
   return n;
+}
+
+// Count live socket connections (distinct from `activeGeneralCount`, which
+// also counts hydrated offline generals). Drives idle-state transitions and
+// gates the PvE→PvP flip so empty/solo servers don't play rounds by themselves.
+function connectedPlayerCount() {
+  let n = 0;
+  for (const p of players.values()) if (p.connected) n++;
+  return n;
+}
+
+// Park the round in the idle phase. Called when the last connected player
+// leaves — wipes transient round bookkeeping so the next joiner kicks off a
+// fresh PvE round via `resetRound()` rather than inheriting a half-finished
+// fog/PvP/ended state.
+function goIdle() {
+  round.phase = 'idle';
+  round.fogRadius = FOG_START;
+  round.startedAt = Date.now();
+  round.pvpStartedAt = 0;
+  round.endedAt = 0;
+  round.winnerId = null;
+  round.restartAt = 0;
+  round.clearTicks = 0;
+  round.pveOvertime = 0;
+  hostilesByPlayer.clear();
+  deadThisRound.clear();
+  console.log('[round] idle — waiting for players');
 }
 
 function startNewRound() {
@@ -288,6 +320,15 @@ io.on('connection', (socket) => {
         round: serializeRound(),
       });
       return;
+    }
+
+    // First player into an empty server kicks off a fresh round. `resetRound`
+    // wipes DB progression (souls/upgrades/allies) and randomizes positions,
+    // so the DB read below reflects the new-round defaults. The joiner isn't
+    // in `players` yet, so resetRound's in-memory loop skips them — no stale
+    // state carries over.
+    if (round.phase === 'idle') {
+      resetRound();
     }
 
     const existing = db.getPlayer.get(playerId);
@@ -475,6 +516,13 @@ io.on('connection', (socket) => {
       io.to(ROOM).emit('player_left', { playerId: pid });
       console.log(`[io] ${p.name} (${pid.slice(0, 8)}) disconnected`);
       break;
+    }
+    // If that was the last connected socket, park the round in idle so the
+    // tick loop stops advancing fog/phase while the server is empty. Also
+    // covers the PvP-forfeit branch above, where killGeneral may have just
+    // flipped us to 'ended' — there's no one to show that to anyway.
+    if (connectedPlayerCount() === 0 && round.phase !== 'idle') {
+      goIdle();
     }
   });
 });
@@ -749,7 +797,11 @@ function killGeneral(target, killerId) {
 
 function maybeEndRound() {
   if (round.phase !== 'pvp') return;
-  const alive = [...players.values()].filter(p => p.hp > 0);
+  // Require the survivor to still be connected. A disconnected socket's
+  // player is already removed from `players` via killGeneral, but guarding
+  // on `p.connected` is defensive against a mid-tick disconnect where the
+  // cleanup hasn't fired yet.
+  const alive = [...players.values()].filter(p => p.connected && p.hp > 0);
   if (alive.length <= 1) {
     endRound(alive[0]?.id ?? null);
   }
@@ -779,7 +831,18 @@ setInterval(() => {
 }, TICK_MS);
 
 function tickRound(dt) {
+  // Idle server: nothing advances until someone joins. The join handler is
+  // what flips us back into 'pve' via resetRound().
+  if (round.phase === 'idle') return;
+
   if (round.phase === 'ended') {
+    // Don't auto-restart into an empty room. If the last player left during
+    // the post-round countdown, park in idle — the next joiner starts a
+    // fresh round instead of auto-looping and declaring a ghost winner.
+    if (connectedPlayerCount() === 0) {
+      goIdle();
+      return;
+    }
     if (round.restartAt && Date.now() >= round.restartAt) {
       resetRound();
     }
@@ -788,6 +851,16 @@ function tickRound(dt) {
 
   if (round.phase === 'pve') {
     round.fogRadius = computeFogRadius();
+
+    // Solo (or empty) PvE: don't progress toward PvP. A lone player would
+    // instantly "win" on the PvP flip (alive.length <= 1). Hold the PvE
+    // counters at zero so the round doesn't pop into PvP the moment a
+    // second player joins either.
+    if (connectedPlayerCount() < 2) {
+      round.clearTicks = 0;
+      round.pveOvertime = 0;
+      return;
+    }
 
     // Condition 1: all clients report zero hostiles for CLEAR_TICKS ticks.
     if (hostilesByPlayer.size > 0 && totalHostiles() === 0) {
