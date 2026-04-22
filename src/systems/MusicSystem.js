@@ -39,6 +39,7 @@ class Music {
     this._currentUrl = null;
     this._queue = [];
     this._inited = false;
+    this._autoAdvanceScheduled = false;
   }
 
   // Safe to call many times. No-op until AudioSystem has a live context
@@ -50,7 +51,10 @@ class Music {
 
     for (const url of [...ROUND_TRACKS, PVP_TRACK]) {
       const audio = new Audio(url);
-      audio.loop = true;
+      // Only the PvP track loops on its own — the round tracks chain
+      // through the shuffle queue instead, so when one runs out we
+      // crossfade into a different round track rather than repeating.
+      audio.loop = (url === PVP_TRACK);
       audio.preload = 'auto';
       // Same-origin, no CORS attribute needed. Kick the browser into
       // downloading now so the first crossfade isn't starved for bytes.
@@ -58,6 +62,33 @@ class Music {
       const gain = AudioSystem.connectMusic(audio);
       if (!gain) continue;
       this._tracks.set(url, { audio, gain });
+
+      // Near-end watcher: when the playing round track is within
+      // CROSSFADE_SECS of its duration, start the crossfade into the next
+      // round track so the outgoing tail overlaps the incoming head
+      // instead of leaving dead air. `timeupdate` fires a few times per
+      // second in every browser, so the 0.1s buffer is plenty of lead
+      // time for the 2.5s ramp. `_autoAdvanceScheduled` guards against
+      // the event firing repeatedly inside the same end-of-track window.
+      audio.addEventListener('timeupdate', () => {
+        if (url !== this._currentUrl) return;
+        if (url === PVP_TRACK) return;
+        if (this._autoAdvanceScheduled) return;
+        const remaining = audio.duration - audio.currentTime;
+        if (!isFinite(remaining) || remaining <= 0) return;
+        if (remaining <= CROSSFADE_SECS + 0.1) {
+          this._autoAdvanceScheduled = true;
+          this._crossfadeTo(this._nextRoundTrack());
+        }
+      });
+      // Safety net: if `timeupdate` doesn't fire often enough (tab
+      // throttling, etc.) and the track actually ends before we crossfade,
+      // jump straight to the next round track with a quick fade-in rather
+      // than leaving the player in silence.
+      audio.addEventListener('ended', () => {
+        if (url !== this._currentUrl || url === PVP_TRACK) return;
+        this._crossfadeTo(this._nextRoundTrack(), 0.4);
+      });
     }
     this._inited = true;
   }
@@ -131,6 +162,9 @@ class Music {
     next.gain.gain.linearRampToValueAtTime(TARGET_TRACK_GAIN, now + fade);
 
     this._currentUrl = url;
+    // The new track is at the top of its run; let its timeupdate watcher
+    // schedule the next crossfade when it approaches its own end.
+    this._autoAdvanceScheduled = false;
   }
 }
 
