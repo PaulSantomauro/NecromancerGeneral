@@ -225,8 +225,8 @@ function hydrateWorld() {
       name: row.name,
       pos: { x: row.position_x, z: row.position_z },
       yaw: 0,
-      hp: 30,
-      maxHp: 30,
+      hp: 40,
+      maxHp: 40,
       souls: row.souls,
       energy: row.energy,
       upgrades: {
@@ -278,8 +278,11 @@ io.on('connection', (socket) => {
 
     // Permadeath: players killed this round cannot rejoin as active
     // combatants. Send them the current round state so the client can
-    // display the spectator/winner banner, then stop.
-    if (deadThisRound.has(playerId) && round.phase !== 'ended') {
+    // display the spectator/winner banner, then stop. Denial applies in
+    // every phase until `startNewRound()` clears `deadThisRound` — the
+    // previous `phase !== 'ended'` guard let a dead player reload during
+    // the 30s post-round window and re-enter as a live general.
+    if (deadThisRound.has(playerId)) {
       socket.emit('rejoin_denied', {
         reason: 'dead_this_round',
         round: serializeRound(),
@@ -297,8 +300,8 @@ io.on('connection', (socket) => {
         name:      name || existing.name,
         pos:       mem ? mem.pos : { x: existing.position_x, z: existing.position_z },
         yaw:       0,
-        hp:        mem ? mem.hp : 30,
-        maxHp:     30,
+        hp:        mem ? mem.hp : 40,
+        maxHp:     40,
         souls:     mem ? mem.souls : existing.souls,
         energy:    existing.energy,
         upgrades: {
@@ -315,10 +318,10 @@ io.on('connection', (socket) => {
         id: playerId, name,
         pos: randomSpawn(),
         yaw: 0,
-        hp: 30,
-        maxHp: 30,
+        hp: 40,
+        maxHp: 40,
         souls: 0,
-        energy: 80,
+        energy: 60,
         upgrades: { empower_self: 0, empower_allies: 0, reinforce_cap: 0 },
         connected: true,
         socketId: socket.id,
@@ -462,6 +465,10 @@ io.on('connection', (socket) => {
       }
       p.connected = false;
       p.socketId = null;
+      // Drop the client's last reported hostile count. Otherwise the
+      // stale number keeps `totalHostiles()` positive forever and blocks
+      // the fast PvE→PvP clear transition after they leave.
+      hostilesByPlayer.delete(pid);
       db.setDisconnected.run(Date.now(), pid);
       db.updatePosition.run(p.pos.x, p.pos.z, Date.now(), pid);
       db.updateSoulsAbs.run(p.souls, pid);
@@ -800,8 +807,32 @@ function tickRound(dt) {
   }
 
   if (round.phase === 'pvp') {
+    // Server owns HP during PvP. Apply fog damage here so the authoritative
+    // hp tracked on the server can't diverge from a client's local view:
+    // anyone whose position sits outside the shrinking fog loses hp at the
+    // configured dps and is killed here (not via the client's player_died).
+    tickPvpFog(dt);
     // If everyone disconnected / died during PvP, end the round.
     maybeEndRound();
+  }
+}
+
+const FOG_DPS = ROUND_CFG.fogDamagePerSec ?? 3;
+function tickPvpFog(dt) {
+  const fogR = round.fogRadius;
+  const damage = FOG_DPS * dt;
+  for (const p of [...players.values()]) {
+    if (!p.connected || p.hp <= 0) continue;
+    const d = Math.hypot(p.pos.x, p.pos.z);
+    if (d <= fogR) continue;
+    p.hp -= damage;
+    io.to(ROOM).emit('player_damaged', {
+      playerId: p.id,
+      hp: p.hp,
+      amount: damage,
+      source: null,
+    });
+    if (p.hp <= 0) killGeneral(p, null);
   }
 }
 
@@ -815,7 +846,36 @@ setInterval(() => {
   }
 }, FLUSH_MS);
 
+// Wipes all per-round progression so the server starts on a clean round
+// after a deploy/restart. Identities (id + name) in the `players` table are
+// preserved so returning players keep their general, but souls, upgrades,
+// and persisted allies are all cleared and positions are randomized. Skip
+// by setting `FRESH_BOOT=0` (useful for local debugging restarts).
+function freshBootReset() {
+  if (process.env.FRESH_BOOT === '0') {
+    console.log('[boot] FRESH_BOOT=0 — skipping progression wipe');
+    return;
+  }
+  db.default.exec(`
+    UPDATE players SET
+      souls = 0,
+      upgrade_empower_self = 0,
+      upgrade_empower_allies = 0,
+      upgrade_reinforce_cap = 0,
+      connected = 0
+  `);
+  db.default.exec('DELETE FROM allies');
+  const setPos = db.default.prepare('UPDATE players SET position_x = ?, position_z = ? WHERE id = ?');
+  const rows = db.default.prepare('SELECT id FROM players').all();
+  for (const row of rows) {
+    const s = randomSpawn();
+    setPos.run(s.x, s.z, row.id);
+  }
+  console.log(`[boot] progression wiped for ${rows.length} stored generals`);
+}
+
 // ── Boot ────────────────────────────────────────────────────────────────────
+freshBootReset();
 hydrateWorld();
 httpServer.listen(PORT, () => {
   console.log(`[server] Necromancer General listening on :${PORT}`);

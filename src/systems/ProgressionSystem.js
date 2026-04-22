@@ -126,6 +126,13 @@ export class ProgressionSystem {
 
   spendSouls(n) {
     if (this.souls < n) return false;
+    // In networked mode the server debits souls on player_fire/upgrade_purchase
+    // and broadcasts the authoritative total via `souls_granted`. Don't also
+    // decrement locally — that double-deducts until the server reply arrives,
+    // and leaves the UI showing a phantom loss if the server rejected the
+    // spend (rate limit, insufficient server-side total). Return true so the
+    // caller proceeds with its client-side effect; the server will reconcile.
+    if (this.networked) return true;
     this.souls -= n;
     events.emit(GameEvent.SOULS_CHANGED, { total: this.souls, delta: -n });
     return true;
