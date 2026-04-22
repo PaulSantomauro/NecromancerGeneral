@@ -3,6 +3,15 @@ import ammoConfig from '../config/ammo.json';
 
 const AMMO_CLASSES = Object.keys(ammoConfig).map(k => `ammo-${k}`);
 
+const KILL_FEED_MAX = 4;
+const KILL_FEED_TTL_MS = 7000;
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 export class HUD {
   constructor({ playerStats, progression, roundState = null }) {
     this.playerStats = playerStats;
@@ -24,9 +33,22 @@ export class HUD {
     this.roundOverlay  = document.getElementById('round-overlay');
     this.roundOverlayTitle = document.getElementById('round-overlay-title');
     this.roundOverlaySub   = document.getElementById('round-overlay-sub');
+    this.roundOverlayLeaderboard = document.getElementById('round-overlay-leaderboard');
     this._lastPhase = null;
     this._deathShown = false;
     this._winnerShown = false;
+    this._nameById = new Map(); // id → name cache, fed by state_tick
+
+    this.killFeed = document.getElementById('kill-feed');
+    this._killFeedEntries = [];
+
+    this.crosshairWrap = document.getElementById('crosshair-wrap');
+    this.crosshairCooldown = document.getElementById('crosshair-cooldown');
+    this.crosshairHitmark = document.getElementById('crosshair-hitmark');
+    this._cooldown = { active: false, elapsed: 0, duration: 0 };
+    this._hitmarkTimer = 0;
+    this._phaseFlash = document.getElementById('phase-flash');
+    this._ammoCostFlashTimer = null;
 
     this.soulCount = document.getElementById('soul-count');
     this.levelCount = document.getElementById('level-count');
@@ -68,6 +90,65 @@ export class HUD {
       this.ammoName.classList.add(`ammo-${key}`);
       this.crosshair.classList.add(`ammo-${key}`);
       this._renderAmmoCost(key);
+      // Resetting the cooldown on ammo switch prevents a stale ring from
+      // sticking around through a switch-mid-cooldown.
+      this._cooldown = { active: false, elapsed: 0, duration: 0 };
+      this._renderCrosshairCooldown();
+    });
+
+    events.subscribe(GameEvent.PLAYER_FIRED, ({ ammoKey }) => {
+      const cfg = ammoConfig[ammoKey];
+      if (!cfg) return;
+      this._cooldown = { active: true, elapsed: 0, duration: cfg.fireInterval };
+      this._renderCrosshairCooldown();
+    });
+
+    // Failed-fire feedback: short red pulse on the ammo cost pill plus the
+    // audio "nope" (raised separately in the AudioSystem subscription).
+    events.subscribe(GameEvent.FIRE_FAILED, ({ reason }) => {
+      if (!this.ammoCost) return;
+      this.ammoCost.classList.remove('fire-fail');
+      void this.ammoCost.offsetWidth;
+      this.ammoCost.classList.add('fire-fail');
+      if (this._ammoCostFlashTimer) clearTimeout(this._ammoCostFlashTimer);
+      this._ammoCostFlashTimer = setTimeout(() => {
+        this.ammoCost.classList.remove('fire-fail');
+      }, 280);
+    });
+
+    events.subscribe(GameEvent.HIT_MARKER, () => {
+      if (!this.crosshairHitmark) return;
+      this.crosshairHitmark.classList.remove('active');
+      void this.crosshairHitmark.offsetWidth;
+      this.crosshairHitmark.classList.add('active');
+      this._hitmarkTimer = 0.18;
+    });
+
+    events.subscribe(GameEvent.NET_STATE_TICK, ({ players: serverPlayers }) => {
+      if (!serverPlayers) return;
+      // Cache id → name so the kill-feed and leaderboard can resolve names
+      // for players who aren't currently rendered (disconnected, dead).
+      for (const p of serverPlayers) {
+        if (p && p.id && p.name) this._nameById.set(p.id, p.name);
+      }
+      // Keep the most recent known list around for the leaderboard render.
+      this._lastPlayers = serverPlayers;
+    });
+
+    events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {
+      const victim = this._resolveName(playerId);
+      const killer = killedBy ? this._resolveName(killedBy) : null;
+      const text = killer ? `${victim} fell to ${killer}` : `${victim} was claimed by the fog`;
+      const mine = (this._myId && (playerId === this._myId || killedBy === this._myId));
+      this._addKillFeedEntry(text, mine);
+    });
+
+    events.subscribe(GameEvent.PHASE_TRANSITION, ({ to }) => {
+      if (!this._phaseFlash) return;
+      this._phaseFlash.classList.remove('flash-pvp', 'flash-victory');
+      void this._phaseFlash.offsetWidth;
+      if (to === 'pvp') this._phaseFlash.classList.add('flash-pvp');
+      else if (to === 'ended') this._phaseFlash.classList.add('flash-victory');
     });
 
     events.subscribe(GameEvent.ENERGY_CHANGED, ({ current, max }) => {
@@ -132,13 +213,14 @@ export class HUD {
         this.roundOverlay.classList.toggle('victory', !!amWinner);
         this.roundOverlayTitle.textContent = amWinner
           ? 'VICTORY · Last general standing'
-          : (winnerId ? 'Round over — another general won' : 'Round over — no winner');
+          : (winnerId ? `Round over — ${this._resolveName(winnerId)} won` : 'Round over — no winner');
       }
       // Seed the countdown subtitle so there's no blank frame before _renderRound ticks.
       const secs = restartAt
         ? Math.max(0, Math.ceil((restartAt - Date.now()) / 1000))
         : 30;
       this.roundOverlaySub.textContent = `New round in ${secs}s`;
+      this._renderLeaderboard(winnerId);
     });
 
     this.ammoName.textContent = ammoConfig.machine_gun.name;
@@ -153,8 +235,97 @@ export class HUD {
     this._myId = id;
   }
 
-  tickRound() {
+  tickRound(dt = 0) {
     this._renderRound();
+    if (this._cooldown.active) {
+      this._cooldown.elapsed += dt;
+      if (this._cooldown.elapsed >= this._cooldown.duration) {
+        this._cooldown = { active: false, elapsed: 0, duration: 0 };
+      }
+      this._renderCrosshairCooldown();
+    }
+    if (this._hitmarkTimer > 0) {
+      this._hitmarkTimer = Math.max(0, this._hitmarkTimer - dt);
+      if (this._hitmarkTimer === 0 && this.crosshairHitmark) {
+        this.crosshairHitmark.classList.remove('active');
+      }
+    }
+    if (this._killFeedEntries.length > 0) {
+      const now = performance.now();
+      for (let i = this._killFeedEntries.length - 1; i >= 0; i--) {
+        const e = this._killFeedEntries[i];
+        if (now - e.at > KILL_FEED_TTL_MS) {
+          if (e.el && e.el.parentNode) e.el.parentNode.removeChild(e.el);
+          this._killFeedEntries.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  _resolveName(id) {
+    if (!id) return '';
+    if (id === this._myId) return 'You';
+    return this._nameById.get(id) || id.slice(0, 6);
+  }
+
+  _addKillFeedEntry(text, mine) {
+    if (!this.killFeed) return;
+    const el = document.createElement('div');
+    el.className = mine ? 'kill-feed-entry mine' : 'kill-feed-entry';
+    el.textContent = text;
+    this.killFeed.appendChild(el);
+    this._killFeedEntries.push({ el, at: performance.now() });
+    while (this._killFeedEntries.length > KILL_FEED_MAX) {
+      const old = this._killFeedEntries.shift();
+      if (old.el && old.el.parentNode) old.el.parentNode.removeChild(old.el);
+    }
+  }
+
+  _renderCrosshairCooldown() {
+    if (!this.crosshairCooldown) return;
+    if (!this._cooldown.active || this._cooldown.duration <= 0) {
+      this.crosshairCooldown.style.opacity = '0';
+      return;
+    }
+    const k = Math.min(1, this._cooldown.elapsed / this._cooldown.duration);
+    const deg = Math.max(0, 360 * (1 - k));
+    // Conic-gradient arc from 12 o'clock clockwise, shrinking as the cooldown
+    // elapses. Goes fully transparent on completion; the CSS fade handles the
+    // tail.
+    this.crosshairCooldown.style.background =
+      `conic-gradient(from -90deg, rgba(255, 235, 59, 0.55) ${deg}deg, transparent ${deg}deg)`;
+    this.crosshairCooldown.style.opacity = k < 1 ? '1' : '0';
+  }
+
+  _renderLeaderboard(winnerId) {
+    if (!this.roundOverlayLeaderboard) return;
+    const list = this._lastPlayers || [];
+    if (list.length === 0) {
+      this.roundOverlayLeaderboard.innerHTML = '';
+      return;
+    }
+    const rows = [...list].sort((a, b) => {
+      // Winner first, then souls desc, then name.
+      if (a.id === winnerId) return -1;
+      if (b.id === winnerId) return 1;
+      return (b.souls ?? 0) - (a.souls ?? 0) || (a.name || '').localeCompare(b.name || '');
+    }).slice(0, 8);
+    const html = rows.map((p, i) => {
+      const isMe = p.id === this._myId;
+      const isWin = p.id === winnerId;
+      const classes = ['lb-row'];
+      if (isWin) classes.push('lb-winner');
+      if (isMe) classes.push('lb-me');
+      const displayName = p.name || p.id.slice(0, 6);
+      const medal = isWin ? '♚' : `${i + 1}.`;
+      return `
+        <div class="${classes.join(' ')}">
+          <span class="lb-rank">${medal}</span>
+          <span class="lb-name">${escapeHtml(displayName)}${isMe ? ' <em>(you)</em>' : ''}</span>
+          <span class="lb-souls">${p.souls ?? 0}☠</span>
+        </div>`;
+    }).join('');
+    this.roundOverlayLeaderboard.innerHTML = html;
   }
 
   _renderRound() {
@@ -171,6 +342,20 @@ export class HUD {
         this._overlayIsWinner = false;
         this.roundOverlay.classList.add('hidden');
         this.roundOverlay.classList.remove('victory');
+        if (this.roundOverlayLeaderboard) this.roundOverlayLeaderboard.innerHTML = '';
+        // Clear the kill-feed on round restart so old deaths don't bleed
+        // into the new round.
+        if (this.killFeed) {
+          for (const e of this._killFeedEntries) {
+            if (e.el && e.el.parentNode) e.el.parentNode.removeChild(e.el);
+          }
+          this._killFeedEntries.length = 0;
+        }
+      }
+      // Fire a transition event the first time we see each phase so the
+      // audio system (and anyone else subscribed) can react once per flip.
+      if (this._lastPhase !== null) {
+        events.emit(GameEvent.PHASE_TRANSITION, { from: this._lastPhase, to: rs.phase });
       }
       this.roundBanner.classList.remove('phase-pve', 'phase-pvp', 'phase-ended');
       this.roundBanner.classList.add(`phase-${rs.phase}`);

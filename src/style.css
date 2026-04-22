@@ -271,11 +271,51 @@ kbd {
 #ammo-cost .cost-souls  { color: #d6a8ff; }
 
 /* === Center: crosshair === */
-#crosshair {
+/* The wrap lets the cooldown ring + hit marker share a center with the
+   crosshair glyph without fighting over positioning. */
+#crosshair-wrap {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+}
+#crosshair-cooldown {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+  -webkit-mask-image: radial-gradient(circle, transparent 56%, black 60%, black 78%, transparent 82%);
+          mask-image: radial-gradient(circle, transparent 56%, black 60%, black 78%, transparent 82%);
+  filter: drop-shadow(0 0 5px rgba(255, 235, 59, 0.45));
+  pointer-events: none;
+}
+#crosshair-hitmark {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(255, 240, 200, 0.7));
+}
+#crosshair-hitmark.active {
+  animation: hitmark-pop 0.22s ease-out;
+}
+@keyframes hitmark-pop {
+  0%   { opacity: 0.0; transform: scale(0.6); border-color: rgba(255, 255, 255, 0); }
+  20%  { opacity: 1.0; transform: scale(1.0); border-color: rgba(255, 240, 200, 0.95); }
+  100% { opacity: 0.0; transform: scale(1.25); border-color: rgba(255, 240, 200, 0); }
+}
+#crosshair {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 20px;
   font-weight: 300;
   color: #ffeb3b;
@@ -295,9 +335,9 @@ kbd {
   animation: crosshair-kill 0.36s ease-out;
 }
 @keyframes crosshair-kill {
-  0%   { transform: translate(-50%, -50%) scale(1);   color: #fff;    text-shadow: 0 0 18px #ff5c3a, 0 0 8px #ffffff; }
-  40%  { transform: translate(-50%, -50%) scale(1.8); color: #fff0c8; text-shadow: 0 0 22px #ff4040, 0 0 10px #ffffff; }
-  100% { transform: translate(-50%, -50%) scale(1);   color: inherit; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
+  0%   { transform: scale(1);   color: #fff;    text-shadow: 0 0 18px #ff5c3a, 0 0 8px #ffffff; }
+  40%  { transform: scale(1.8); color: #fff0c8; text-shadow: 0 0 22px #ff4040, 0 0 10px #ffffff; }
+  100% { transform: scale(1);   color: inherit; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
 }
 
 /* === Round banner (battle-royale phase) === */
@@ -663,3 +703,130 @@ kbd {
   line-height: 1.45;
   max-width: 440px;
 }
+
+/* === Kill feed — top-right stack below the stats panel === */
+#kill-feed {
+  position: absolute;
+  top: 180px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 320px;
+  pointer-events: none;
+  z-index: 40;
+}
+.kill-feed-entry {
+  padding: 6px 12px;
+  background: rgba(10, 6, 12, 0.78);
+  border: 1px solid rgba(200, 90, 90, 0.35);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #ffd0c0;
+  text-align: right;
+  animation: kill-feed-slide 0.35s ease-out, kill-feed-fade 7s linear forwards;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+}
+.kill-feed-entry.mine {
+  border-color: rgba(255, 200, 120, 0.7);
+  color: #ffe4a0;
+  background: rgba(30, 16, 8, 0.82);
+  box-shadow: 0 0 12px rgba(255, 180, 80, 0.25);
+}
+@keyframes kill-feed-slide {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes kill-feed-fade {
+  0%, 60% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
+/* === Phase-transition full-screen flash === */
+#phase-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 45;
+}
+#phase-flash.flash-pvp {
+  animation: phase-flash-pvp 1.2s ease-out;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 40, 20, 0.0) 35%, rgba(255, 60, 30, 0.45) 85%, rgba(120, 10, 10, 0.7) 100%),
+    linear-gradient(180deg, rgba(255, 70, 30, 0.25), rgba(120, 10, 10, 0.15));
+}
+@keyframes phase-flash-pvp {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+#phase-flash.flash-victory {
+  animation: phase-flash-vic 1.4s ease-out;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 220, 100, 0.0) 40%, rgba(255, 200, 80, 0.4) 85%, rgba(160, 90, 10, 0.55) 100%);
+}
+@keyframes phase-flash-vic {
+  0%   { opacity: 0; }
+  22%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* === Ammo cost pill: insufficient flash === */
+#ammo-cost.fire-fail {
+  animation: ammo-cost-fail 0.28s ease-out;
+}
+@keyframes ammo-cost-fail {
+  0%   { color: inherit; transform: translateX(0); }
+  20%  { color: #ff5050; transform: translateX(-3px); }
+  40%  { color: #ff5050; transform: translateX(3px); }
+  60%  { color: #ff5050; transform: translateX(-2px); }
+  100% { color: inherit; transform: translateX(0); }
+}
+
+/* === Round-over leaderboard === */
+#round-overlay-leaderboard {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 280px;
+}
+#round-overlay-leaderboard:empty {
+  display: none;
+}
+.lb-row {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: rgba(20, 10, 14, 0.6);
+  border: 1px solid rgba(180, 100, 100, 0.2);
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-align: left;
+}
+.lb-row.lb-winner {
+  border-color: rgba(255, 200, 80, 0.8);
+  background: rgba(48, 30, 12, 0.85);
+  color: #ffe4a0;
+  box-shadow: 0 0 14px rgba(255, 200, 80, 0.25);
+}
+.lb-row.lb-me {
+  border-color: rgba(200, 140, 255, 0.55);
+}
+.lb-rank {
+  font-family: inherit;
+  font-weight: 800;
+  color: rgba(240, 220, 180, 0.75);
+  text-align: center;
+}
+.lb-winner .lb-rank { color: #ffd080; font-size: 16px; }
+.lb-name { text-align: left; }
+.lb-name em { font-style: normal; opacity: 0.6; font-size: 11px; }
+.lb-souls { color: #d6a8ff; font-weight: 800; text-align: right; }

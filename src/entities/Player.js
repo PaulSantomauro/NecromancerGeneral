@@ -266,8 +266,14 @@ export class Player {
     const cfg = ammoConfig[this.currentAmmoKey];
     const energyCost = cfg.energyCost ?? 0;
     const soulCost = cfg.soulCost ?? 0;
-    if (!this.stats.canSpendEnergy(energyCost)) return;
-    if (soulCost > 0 && (!this.progression || !this.progression.canAffordSouls(soulCost))) return;
+    if (!this.stats.canSpendEnergy(energyCost)) {
+      events.emit(GameEvent.FIRE_FAILED, { reason: 'energy', ammoKey: this.currentAmmoKey });
+      return;
+    }
+    if (soulCost > 0 && (!this.progression || !this.progression.canAffordSouls(soulCost))) {
+      events.emit(GameEvent.FIRE_FAILED, { reason: 'souls', ammoKey: this.currentAmmoKey });
+      return;
+    }
     this.stats.spendEnergy(energyCost);
     if (soulCost > 0) this.progression.spendSouls(soulCost);
 

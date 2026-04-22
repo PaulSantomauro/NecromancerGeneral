@@ -20,6 +20,7 @@ import { wrapPosition, closestWrap, toroidalDelta } from './systems/Toroid.js';
 import { FxPool } from './systems/FxPool.js';
 import { ScreenShake } from './systems/ScreenShake.js';
 import { PortalSystem } from './systems/PortalSystem.js';
+import { AudioSystem } from './systems/AudioSystem.js';
 
 const WS_URL = import.meta.env?.VITE_WS_URL || 'http://localhost:2567';
 
@@ -119,17 +120,41 @@ function raycastToTerrain() {
   return null;
 }
 
-// Simple fading ring marker at the commanded point.
-const attackMoveMarkerGeom = new THREE.RingGeometry(0.6, 1.1, 32);
-const attackMoveMarkerMat = new THREE.MeshBasicMaterial({
-  color: 0xff4040, transparent: true, opacity: 0, side: THREE.DoubleSide,
-  depthWrite: false,
+// Waypoint marker at the commanded point. Three layered parts that pulse
+// together so the command is legible from across the arena:
+//   - bright ring on the ground
+//   - vertical beam pole
+//   - a faint inner disc
+const attackMoveMarker = new THREE.Group();
+const attackMoveMarkerRingMat = new THREE.MeshBasicMaterial({
+  color: 0xff6040, transparent: true, opacity: 0, side: THREE.DoubleSide,
+  depthWrite: false, blending: THREE.AdditiveBlending,
 });
-const attackMoveMarker = new THREE.Mesh(attackMoveMarkerGeom, attackMoveMarkerMat);
-attackMoveMarker.rotation.x = -Math.PI / 2;
+const attackMoveRing = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.6, 48), attackMoveMarkerRingMat);
+attackMoveRing.rotation.x = -Math.PI / 2;
+attackMoveMarker.add(attackMoveRing);
+
+const attackMoveDiscMat = new THREE.MeshBasicMaterial({
+  color: 0xff4040, transparent: true, opacity: 0, side: THREE.DoubleSide,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+});
+const attackMoveDisc = new THREE.Mesh(new THREE.CircleGeometry(0.8, 32), attackMoveDiscMat);
+attackMoveDisc.rotation.x = -Math.PI / 2;
+attackMoveDisc.position.y = 0.02;
+attackMoveMarker.add(attackMoveDisc);
+
+const attackMovePoleMat = new THREE.MeshBasicMaterial({
+  color: 0xff8050, transparent: true, opacity: 0, depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const attackMovePole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 4, 8, 1, true), attackMovePoleMat);
+attackMovePole.position.y = 2;
+attackMoveMarker.add(attackMovePole);
+
 attackMoveMarker.visible = false;
 scene.add(attackMoveMarker);
 let attackMoveMarkerTimer = 0;
+const ATTACK_MOVE_MARKER_DURATION = 1.6;
 
 function issueAttackMove(point) {
   let count = 0;
@@ -144,7 +169,7 @@ function issueAttackMove(point) {
   if (count > 0) {
     attackMoveMarker.position.set(point.x, point.y + 0.05, point.z);
     attackMoveMarker.visible = true;
-    attackMoveMarkerTimer = 1.2;
+    attackMoveMarkerTimer = ATTACK_MOVE_MARKER_DURATION;
   }
 }
 
@@ -214,11 +239,41 @@ const hud = new HUD({ playerStats, progression, roundState });
 // Hide lock prompt until welcome/restore
 const lockPrompt = document.getElementById('lock-prompt');
 lockPrompt.classList.add('hidden');
-lockPrompt.addEventListener('click', () => player.controls.lock());
-player.controls.addEventListener('lock',   () => hud.showLockPrompt(false));
+lockPrompt.addEventListener('click', () => {
+  // Pointer-lock click is the canonical user gesture for audio — initialize
+  // the WebAudio context here so every subsequent AudioSystem.* call can
+  // emit sound. AudioSystem.ensure() is idempotent, so the duplicate calls
+  // from the splash-enter and portal-arrival paths are harmless.
+  AudioSystem.ensure();
+  player.controls.lock();
+});
+player.controls.addEventListener('lock',   () => { AudioSystem.ensure(); hud.showLockPrompt(false); });
 player.controls.addEventListener('unlock', () => hud.showLockPrompt(true));
 
 events.emit(GameEvent.AMMO_CHANGED, { key: 'machine_gun', name: 'Machine Gun' });
+
+// ── Audio wiring ──────────────────────────────────────────────────────────
+// Every procedural blip in AudioSystem is keyed off an existing game event
+// so there's one place to edit the cue map. `ensure()` is a no-op until a
+// user gesture fires (pointer lock or splash enter), after which the
+// AudioContext is live and play* methods produce sound.
+events.subscribe(GameEvent.PLAYER_FIRED, ({ ammoKey }) => AudioSystem.fire(ammoKey));
+events.subscribe(GameEvent.FIRE_FAILED,  ()          => AudioSystem.fireFail());
+events.subscribe(GameEvent.HIT_MARKER,   ()          => AudioSystem.hitMarker());
+events.subscribe(GameEvent.ENEMY_DIED,   ({ skeleton }) => {
+  if (skeleton && skeleton.faction === Faction.HOSTILE) AudioSystem.enemyKill();
+});
+events.subscribe(GameEvent.PLAYER_KILL,  ()          => AudioSystem.playerKill());
+events.subscribe(GameEvent.PLAYER_DIED,  ()          => AudioSystem.death());
+events.subscribe(GameEvent.PLAYER_DAMAGED, ({ amount }) => {
+  if (!amount || amount <= 0) return;
+  AudioSystem.hurt();
+});
+events.subscribe(GameEvent.PHASE_TRANSITION, ({ to, from }) => {
+  if (to === 'pvp') AudioSystem.horn('pvp');
+  else if (to === 'ended') AudioSystem.horn('victory');
+  else if (to === 'pve' && from === 'ended') AudioSystem.horn('round_start');
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function reconcileRemotes({ worldPlayers }) {
@@ -914,19 +969,48 @@ function animate() {
       const dy = proj.position.y;
       if (dy < -0.2 || dy > 1.9) continue;
       proj.alive = false;
+      // Only my own shots fire a hit marker. Remote-replay projectiles have
+      // `remoteOwnerId` set, so skip those — otherwise the marker would fire
+      // whenever anyone's bullet connected within my local view.
+      if (!proj.remoteOwnerId) events.emit(GameEvent.HIT_MARKER, { target: rg });
       events.emit(GameEvent.PROJECTILE_HIT, { projectile: proj, target: rg });
       break;
     }
   }
 
-  hud.tickRound();
+  hud.tickRound(dt);
+
+  // Spectator camera: once the local general is dead, slowly orbit the yaw
+  // so the view doesn't feel frozen. If a winner is known and still on the
+  // field, pan the camera toward them so the player witnesses the finale.
+  if (!player.alive) {
+    const camObj2 = player.controls.getObject();
+    camObj2.rotation.y += dt * 0.25;
+    if (roundState.phase === 'ended' && roundState.winnerId) {
+      const winner = remoteGenerals.get(roundState.winnerId);
+      if (winner) {
+        const tx = winner.position.x - camObj2.position.x;
+        const tz = winner.position.z - camObj2.position.z;
+        const targetYaw = Math.atan2(tx, tz) + Math.PI;
+        let d = targetYaw - camObj2.rotation.y;
+        while (d >  Math.PI) d -= 2 * Math.PI;
+        while (d < -Math.PI) d += 2 * Math.PI;
+        camObj2.rotation.y += d * Math.min(1, dt * 1.2);
+      }
+    }
+  }
 
   if (attackMoveMarkerTimer > 0) {
     attackMoveMarkerTimer -= dt;
-    const k = Math.max(0, attackMoveMarkerTimer / 1.2);
-    attackMoveMarkerMat.opacity = k * 0.85;
-    const pulse = 1 + (1 - k) * 0.4;
-    attackMoveMarker.scale.setScalar(pulse);
+    const k = Math.max(0, attackMoveMarkerTimer / ATTACK_MOVE_MARKER_DURATION);
+    // Quick beat-pulse layered on top of the overall fade so the marker
+    // visibly throbs even while it fades.
+    const beat = 0.75 + Math.sin((1 - k) * Math.PI * 3) * 0.25;
+    attackMoveMarkerRingMat.opacity = k * 0.95;
+    attackMoveDiscMat.opacity = k * 0.35 * beat;
+    attackMovePoleMat.opacity = k * 0.6 * beat;
+    const expand = 1 + (1 - k) * 0.5;
+    attackMoveRing.scale.set(expand, expand, 1);
     if (attackMoveMarkerTimer <= 0) attackMoveMarker.visible = false;
   }
 
