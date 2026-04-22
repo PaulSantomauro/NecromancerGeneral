@@ -50,6 +50,7 @@ canvas { display: block; }
   font-size: 13px;
 }
 #battle-hostiles { color: #ffb0a0; }
+#battle-hostiles.awaiting { color: #ffd27a; font-style: italic; }
 #battle-allies   { color: #7fb8ff; }
 
 /* === Top left: controls === */

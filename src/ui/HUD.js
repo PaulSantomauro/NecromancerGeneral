@@ -76,7 +76,19 @@ export class HUD {
     });
 
     events.subscribe(GameEvent.BATTLE_TICK, (d) => {
-      this.hostiles.textContent = `⚔ ${d.hostiles} hostiles`;
+      // When the local horde is cleared but the field total (summed across
+      // every player) isn't, tell the player explicitly rather than leaving
+      // them staring at "0 hostiles" wondering why PvP hasn't started.
+      // Hostiles are client-local (each player fights their own instance),
+      // so "0 local" ≠ "round over" — the server waits for everyone.
+      const rs = this.roundState;
+      const fieldTotal = rs?.totalHostiles ?? d.hostiles;
+      const waitingForStragglers =
+        d.hostiles === 0 && rs?.phase === 'pve' && fieldTotal > 0;
+      this.hostiles.textContent = waitingForStragglers
+        ? `⚔ 0 · awaiting generals (${fieldTotal} on field)`
+        : `⚔ ${d.hostiles} hostiles`;
+      this.hostiles.classList.toggle('awaiting', waitingForStragglers);
       this.allies.textContent   = `▲ ${d.allies} allies`;
       this.killCount.textContent = d.killed;
     });
