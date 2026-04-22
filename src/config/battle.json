@@ -15,10 +15,10 @@
     { "center": [90, 0, 100], "radius": 12, "label": "SE Crypt" },
     { "center": [-125, 0, -120], "radius": 12, "label": "NW Reach" },
     { "center": [125, 0, -120], "radius": 12, "label": "NE Reach" },
-    { "center": [0, 0, -60], "radius": 12, "label": "Northern Sanctum" },
-    { "center": [60, 0, 0], "radius": 12, "label": "Eastern Watch" },
-    { "center": [0, 0, 60], "radius": 12, "label": "Southern Bastion" },
-    { "center": [-60, 0, 0], "radius": 12, "label": "Western Hollow" }
+    { "center": [0, 0, -60], "radius": 10, "label": "Northern Sanctum" },
+    { "center": [60, 0, 0], "radius": 10, "label": "Eastern Watch" },
+    { "center": [0, 0, 60], "radius": 10, "label": "Southern Bastion" },
+    { "center": [-60, 0, 0], "radius": 10, "label": "Western Hollow" }
   ],
   "playerSpawnPoint": [0, 0, 0],
   "battlefieldRadius": 150,
