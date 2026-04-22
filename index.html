@@ -101,8 +101,13 @@
       </div>
     </div>
 
-    <div id="crosshair">+</div>
+    <div id="crosshair-wrap">
+      <div id="crosshair-cooldown"></div>
+      <div id="crosshair">+</div>
+      <div id="crosshair-hitmark"></div>
+    </div>
     <div id="damage-flash"></div>
+    <div id="phase-flash"></div>
     <div id="damage-indicators"></div>
     <div id="lock-prompt">Click to enter battle</div>
 
@@ -112,9 +117,12 @@
       <span id="round-timer">·  Fog: <span id="round-timer-text">5:00</span></span>
     </div>
 
+    <div id="kill-feed"></div>
+
     <div id="round-overlay" class="hidden">
       <div id="round-overlay-title">You have fallen</div>
       <div id="round-overlay-sub">Spectating — await the round&rsquo;s end.</div>
+      <div id="round-overlay-leaderboard"></div>
     </div>
   </div>
   <script type="module" src="/src/main.js"></script>

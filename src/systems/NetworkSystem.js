@@ -14,7 +14,12 @@ export class NetworkSystem {
 
     this.socket.on('connect', () => {
       this.connected = true;
-      this.socket.emit('join', { playerId, name });
+      // `connect` fires for the initial connection and every auto-reconnect
+      // after a transient drop (wifi blip, tab suspend). Re-emitting `join`
+      // here is the single path that restores our state on the server: the
+      // initial handshake, a mid-session reconnect, and the explicit
+      // rejoin() call below all land here.
+      this.socket.emit('join', { playerId: this.playerId, name: this._name });
     });
 
     this.socket.on('disconnect', () => {
