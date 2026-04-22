@@ -147,6 +147,16 @@ function connectedPlayerCount() {
   return n;
 }
 
+// Number of sockets currently in the battle room. Counts dead spectators
+// whose `players` entry was already removed by killGeneral (PvP forfeit /
+// fog death) but whose socket is still attached. Use this — not
+// connectedPlayerCount — when deciding whether the room is truly empty,
+// otherwise a round of mutual deaths would goIdle and freeze the restart
+// countdown for the spectators waiting for the next round.
+function socketsInRoom() {
+  return io.sockets.adapter.rooms.get(ROOM)?.size ?? 0;
+}
+
 // Park the round in the idle phase. Called when the last connected player
 // leaves — wipes transient round bookkeeping so the next joiner kicks off a
 // fresh PvE round via `resetRound()` rather than inheriting a half-finished
@@ -206,6 +216,17 @@ function resetRound() {
   for (const row of db.default.prepare('SELECT id FROM players').all()) {
     const s = randomSpawn();
     setPos.run(s.x, s.z, row.id);
+  }
+
+  // Flush every non-connected entry from the in-memory roster: hydrated
+  // offline generals from boot, players who disconnected during the prior
+  // round, and anyone reset() got handed by stale state. Without this,
+  // resetRound revives them all (hp = maxHp below) and broadcasts them in
+  // state_tick — clients then see "ghost" generals after a restart, and
+  // activeGeneralCount inflates the GENERALS counter. Their DB rows persist
+  // so they re-enter via the join handler if their socket comes back.
+  for (const [id, p] of players) {
+    if (!p.connected) players.delete(id);
   }
 
   // Reset surviving (connected) players' in-memory state.
@@ -525,11 +546,12 @@ io.on('connection', (socket) => {
       console.log(`[io] ${p.name} (${pid.slice(0, 8)}) disconnected`);
       break;
     }
-    // If that was the last connected socket, park the round in idle so the
-    // tick loop stops advancing fog/phase while the server is empty. Also
-    // covers the PvP-forfeit branch above, where killGeneral may have just
-    // flipped us to 'ended' — there's no one to show that to anyway.
-    if (connectedPlayerCount() === 0 && round.phase !== 'idle') {
+    // If the room is now empty, park the round in idle so the tick loop
+    // stops advancing fog/phase while the server is empty. Use socket count
+    // (not connectedPlayerCount): a dead spectator still in the room has no
+    // `players` entry — connectedPlayerCount would say 0 and we'd
+    // incorrectly idle while they're waiting for the post-round restart.
+    if (socketsInRoom() === 0 && round.phase !== 'idle') {
       goIdle();
     }
   });
@@ -855,10 +877,14 @@ function tickRound(dt) {
   if (round.phase === 'idle') return;
 
   if (round.phase === 'ended') {
-    // Don't auto-restart into an empty room. If the last player left during
+    // Don't auto-restart into an empty room. If the last socket left during
     // the post-round countdown, park in idle — the next joiner starts a
     // fresh round instead of auto-looping and declaring a ghost winner.
-    if (connectedPlayerCount() === 0) {
+    // Socket count (not players count): when everyone died simultaneously,
+    // killGeneral removed them from `players` but their sockets stay in the
+    // room as spectators waiting for the restart — those need to keep the
+    // countdown ticking.
+    if (socketsInRoom() === 0) {
       goIdle();
       return;
     }
