@@ -16,6 +16,7 @@
 
 let _ctx = null;
 let _master = null;
+let _musicBus = null;
 let _muted = false;
 
 // Throttles (ms) — keyed sound names used to debounce rapid events.
@@ -96,7 +97,35 @@ export const AudioSystem = {
     _master = _ctx.createGain();
     _master.gain.value = _muted ? 0 : 0.6;
     _master.connect(_ctx.destination);
+    // Music sits on a sub-bus so track volume can be tuned independently
+    // of SFX without re-balancing every procedural cue. Keep this ratio
+    // small — the round tracks are dense full-range mixes that easily
+    // drown out the click-level SFX if run at parity.
+    _musicBus = _ctx.createGain();
+    _musicBus.gain.value = 0.35;
+    _musicBus.connect(_master);
     if (_ctx.state === 'suspended') _ctx.resume().catch(() => {});
+  },
+
+  getContext() { return _ctx; },
+  getMusicBus() { return _musicBus; },
+
+  // Wire an HTMLAudioElement into the music bus. Returns a per-track gain
+  // node that callers can ramp for crossfades. MediaElementAudioSource is
+  // created once per element (the spec forbids multiple), so pass each
+  // element through this exactly once and reuse the returned gain.
+  connectMusic(audioEl) {
+    if (!_ctx || !_musicBus) return null;
+    const source = _ctx.createMediaElementSource(audioEl);
+    const trackGain = _ctx.createGain();
+    trackGain.gain.value = 0;
+    source.connect(trackGain).connect(_musicBus);
+    return trackGain;
+  },
+
+  setMusicVolume(v) {
+    if (!_musicBus || !_ctx) return;
+    _musicBus.gain.setTargetAtTime(v, _ctx.currentTime, 0.1);
   },
 
   setMasterVolume(v) {

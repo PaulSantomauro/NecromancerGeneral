@@ -21,6 +21,7 @@ import { FxPool } from './systems/FxPool.js';
 import { ScreenShake } from './systems/ScreenShake.js';
 import { PortalSystem } from './systems/PortalSystem.js';
 import { AudioSystem } from './systems/AudioSystem.js';
+import { MusicSystem } from './systems/MusicSystem.js';
 
 const WS_URL = import.meta.env?.VITE_WS_URL || 'http://localhost:2567';
 
@@ -239,15 +240,22 @@ const hud = new HUD({ playerStats, progression, roundState });
 // Hide lock prompt until welcome/restore
 const lockPrompt = document.getElementById('lock-prompt');
 lockPrompt.classList.add('hidden');
-lockPrompt.addEventListener('click', () => {
-  // Pointer-lock click is the canonical user gesture for audio — initialize
-  // the WebAudio context here so every subsequent AudioSystem.* call can
-  // emit sound. AudioSystem.ensure() is idempotent, so the duplicate calls
-  // from the splash-enter and portal-arrival paths are harmless.
+// Gesture-gated audio startup. Both paths do the same three-step sequence:
+// wake the WebAudio context, build the music elements (no-op after first
+// call), and start a track if none is playing. Running it in both handlers
+// covers the manual lock-prompt click and any lock obtained indirectly
+// (e.g. browser restoring pointer lock across frames).
+function _startAudioAndMusic() {
   AudioSystem.ensure();
+  MusicSystem.init();
+  MusicSystem.startIfSilent(roundState.phase);
+}
+
+lockPrompt.addEventListener('click', () => {
+  _startAudioAndMusic();
   player.controls.lock();
 });
-player.controls.addEventListener('lock',   () => { AudioSystem.ensure(); hud.showLockPrompt(false); });
+player.controls.addEventListener('lock',   () => { _startAudioAndMusic(); hud.showLockPrompt(false); });
 player.controls.addEventListener('unlock', () => hud.showLockPrompt(true));
 
 events.emit(GameEvent.AMMO_CHANGED, { key: 'machine_gun', name: 'Machine Gun' });
@@ -273,6 +281,7 @@ events.subscribe(GameEvent.PHASE_TRANSITION, ({ to, from }) => {
   if (to === 'pvp') AudioSystem.horn('pvp');
   else if (to === 'ended') AudioSystem.horn('victory');
   else if (to === 'pve' && from === 'ended') AudioSystem.horn('round_start');
+  MusicSystem.onPhaseChange(to, from);
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
