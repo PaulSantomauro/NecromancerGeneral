@@ -445,9 +445,21 @@ events.subscribe(GameEvent.NET_STATE_TICK, ({ players: serverPlayers, round: ser
   let activePlayers = 0;
   for (const sp of serverPlayers) if (sp.connected !== false) activePlayers++;
 
-  // HP is client-authoritative (trust-client model). Server's `hp` field is
-  // advisory only and can diverge; we deliberately don't overwrite local HP
-  // from state_tick because local hostile damage never reaches the server.
+  // HP model: client-authoritative during PvE (server doesn't simulate fog
+  // or hostile melee), server-authoritative during PvP (server owns bullet
+  // damage and fog damage). During PvP we reconcile the local HP from the
+  // server's value so the server's `general_died` decision can't diverge
+  // from what the client believes its HP is.
+  if (roundState.phase === 'pvp' && player.alive) {
+    for (const sp of serverPlayers) {
+      if (sp.id !== myId) continue;
+      if (typeof sp.hp !== 'number') break;
+      if (Math.abs(sp.hp - player.stats.hp) > 0.25) {
+        player.stats.setHp(sp.hp);
+      }
+      break;
+    }
+  }
 
   for (const sp of serverPlayers) {
     if (sp.id === myId) continue;
@@ -489,10 +501,18 @@ events.subscribe(GameEvent.NET_UPGRADE_APPLIED, ({ playerId, key, newLevel, soul
 });
 
 events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {
-  const rg = remoteGenerals.get(playerId);
-  if (rg) {
-    scene.remove(rg.mesh);
-    remoteGenerals.delete(playerId);
+  // The server declared a general dead. If that's us, reconcile local state
+  // (HP → 0, stop firing/moving, show spectator overlay). Without this, a
+  // server-side kill during PvP leaves the victim walking around as a
+  // "ghost" whose socket events are silently dropped by the server.
+  if (playerId === myId) {
+    if (player.stats.hp > 0) player.stats.setHp(0);
+  } else {
+    const rg = remoteGenerals.get(playerId);
+    if (rg) {
+      scene.remove(rg.mesh);
+      remoteGenerals.delete(playerId);
+    }
   }
   // Drop any remote allies belonging to that player
   for (const [key, sk] of remoteAllies) {
@@ -841,12 +861,15 @@ function animate() {
   resolveAllCombat(skeletons, projectiles, player, dt, false, roundState.phase);
 
   // Fog damage — anything more than fogRadius from world origin takes
-  // `fogDamagePerSec` hp/sec. Applied locally: remote allies are handled
-  // on their owning client (behaviorTree=null is our proxy for remote-owned).
+  // `fogDamagePerSec` hp/sec. Applied locally to the player only during
+  // PvE (PvP is server-authoritative: the server simulates fog damage and
+  // broadcasts `player_damaged`, so local application would double-count).
+  // Skeletons (allied + hostile) keep taking fog damage locally in both
+  // phases because their HP is client-local.
   if (roundState.phase !== 'ended') {
     const fogR = roundState.fogRadius;
     const dps = battleConfig.round?.fogDamagePerSec ?? 3;
-    if (player.alive) {
+    if (player.alive && roundState.phase === 'pve') {
       const pd = Math.hypot(player.position.x, player.position.z);
       if (pd > fogR) player.stats.takeDamage(dps * dt);
     }

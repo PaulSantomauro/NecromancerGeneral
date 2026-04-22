@@ -34,7 +34,7 @@ export class BattleDirector {
     this.player = player;
     this.spawnSkeleton = spawnSkeleton;
     this.progression = progression;
-    // roundState is a live reference updated by main.js on each NET_ROUND_STATE.
+    // roundState is a live reference updated by main.js on each NET_STATE_TICK.
     // Used to gate spawn zones by the current fog radius and to freeze spawning
     // once PvE ends.
     this.roundState = roundState;
@@ -121,7 +121,12 @@ export class BattleDirector {
     this._allyReinforceTimer -= dt;
     if (this._allyReinforceTimer <= 0) {
       this._allyReinforceTimer = this.config.allyReinforcementInterval;
-      if (allies < this.config.allyReinforcementThreshold && allies < this.maxAllies) {
+      // Match the hostile-spawn gate: no free reinforcements once PvP starts.
+      // The last-standing phase is supposed to be decided by what's on the
+      // field at the transition, not by passive ally top-ups.
+      if (phase === 'pve'
+          && allies < this.config.allyReinforcementThreshold
+          && allies < this.maxAllies) {
         for (let i = 0; i < this.config.allyReinforcementBatchSize; i++) {
           const angle = Math.random() * Math.PI * 2;
           const pos = this.player.position.clone();

@@ -28,7 +28,6 @@ export const GameEvent = Object.freeze({
   NET_ALLY_SPAWNED:       'net_ally_spawned',
   NET_ALLY_DIED:          'net_ally_died',
   NET_PLAYER_FIRED_REMOTE:'net_player_fired_remote',
-  NET_ROUND_STATE:        'net_round_state',
   NET_ROUND_ENDED:        'net_round_ended',
   DAMAGE_INDICATOR:       'damage_indicator',
   PLAYER_KILL:            'player_kill',

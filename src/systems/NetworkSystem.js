@@ -1,5 +1,6 @@
 import { io } from 'socket.io-client';
 import { GameEvent, events } from './EventSystem.js';
+import { syncClock } from './NetClock.js';
 
 export class NetworkSystem {
   constructor({ serverUrl, playerId, name, onRestore, onWelcome }) {
@@ -23,7 +24,10 @@ export class NetworkSystem {
     this.socket.on('restore_state', (data) => this._onRestore(data));
     this.socket.on('welcome',       (data) => this._onWelcome(data));
 
-    this.socket.on('state_tick',          (d) => events.emit(GameEvent.NET_STATE_TICK, d));
+    this.socket.on('state_tick',          (d) => {
+      if (d && typeof d.t === 'number') syncClock(d.t);
+      events.emit(GameEvent.NET_STATE_TICK, d);
+    });
     this.socket.on('skeleton_died',       (d) => events.emit(GameEvent.NET_SKELETON_DIED, d));
     this.socket.on('skeleton_converted',  (d) => events.emit(GameEvent.NET_SKELETON_CONVERTED, d));
     this.socket.on('skeleton_spawned',    (d) => events.emit(GameEvent.NET_SKELETON_SPAWNED, d));
