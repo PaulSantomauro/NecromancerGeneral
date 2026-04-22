@@ -779,7 +779,7 @@ function broadcastAllyState() {
   net.sendAllyState(myAllies, Date.now());
 }
 
-// Called when the server flips phase from `ended` back to `pve` (30s after
+// Called when the server flips phase from `ended` back to `pve` (15s after
 // a winner is declared). Wipes local per-round state and re-emits `join` so
 // the server sends fresh `restore_state` with souls=0 and no persisted allies.
 function onRoundRestarted() {
