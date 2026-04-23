@@ -115,10 +115,8 @@ export class SplashScreen {
           </div>
           <div class="splash-ctrl">
             <span class="splash-ctrl-label">COMBAT</span>
-            <span class="splash-ctrl-keys">
-              <kbd>LMB</kbd><kbd>RMB</kbd>
-            </span>
-            <span class="splash-ctrl-hint"><kbd>LMB</kbd> fire · <kbd>RMB</kbd> attack-move army</span>
+            <span class="splash-ctrl-hint"><kbd>LMB</kbd> fire</span>
+            <span class="splash-ctrl-hint"><kbd>RMB</kbd> attack-move army</span>
           </div>
           <div class="splash-ctrl">
             <span class="splash-ctrl-label">AMMO</span>
