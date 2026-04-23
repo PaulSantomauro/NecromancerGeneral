@@ -61,6 +61,20 @@ export class NetworkSystem {
     });
   }
 
+  // Ally-melee-damage against an enemy general. General HP is server-
+  // authoritative during PvP, so each successful melee hit goes through
+  // this relay. The server validates the attacker owns the hitting
+  // ally, clamps the damage, applies it, and broadcasts player_damaged
+  // + (on kill) general_died so every client stays in sync.
+  sendAllyHitGeneral(targetId, dmg) {
+    if (!this.connected) return;
+    this.socket.emit('ally_hit_general', {
+      playerId: this.playerId,
+      targetId,
+      dmg,
+    });
+  }
+
   // Splash-screen helpers: these fire before `join`, on a separate socket
   // if the caller wants. Safe to call repeatedly — server treats them as
   // read-only DB queries.

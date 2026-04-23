@@ -774,6 +774,38 @@ io.on('connection', (socket) => {
     console.log(`[capture] ${p.name} captured zone #${idx} "${zone.label}"`);
   });
 
+  // Ally melee damage against an enemy general. Only fires during PvP —
+  // PvE keeps all generals on the same team. The attacking player's
+  // client is the source of truth for "my ally swung and connected";
+  // server validates (alive, distinct, phase) and clamps the damage
+  // before applying, so a hacked client can't turn this into an instant
+  // kill stream.
+  socket.on('ally_hit_general', ({ playerId, targetId, dmg }) => {
+    const attacker = players.get(playerId);
+    if (!attacker || attacker.socketId !== socket.id) return;
+    if (attacker.hp <= 0) return;
+    if (round.phase !== 'pvp') return;
+    if (typeof targetId !== 'string' || targetId === playerId) return;
+    const target = players.get(targetId);
+    if (!target || target.hp <= 0) return;
+    // Rate-limit melee swings off the fire bucket — ally attack cadence
+    // is ~1 swing/sec per skeleton, and the fire bucket's refill
+    // accommodates that even across a full army.
+    if (!takeToken(socket, 'fire', FIRE_RATE_CAPACITY, FIRE_RATE_REFILL)) return;
+    // Clamp dmg to a sane range. Ally stats.damage tops out around 3–4
+    // even at high empower_allies tiers; 6 gives a little headroom
+    // without letting one packet two-shot a general.
+    const clampedDmg = Math.max(0.1, Math.min(6, Number(dmg) || 0));
+    target.hp = Math.max(0, target.hp - clampedDmg);
+    io.to(ROOM).emit('player_damaged', {
+      playerId: target.id,
+      hp: target.hp,
+      amount: clampedDmg,
+      source: { x: attacker.pos.x, z: attacker.pos.z },
+    });
+    if (target.hp <= 0) killGeneral(target, playerId);
+  });
+
   socket.on('upgrade_purchase', ({ playerId, key }) => {
     const p = players.get(playerId);
     if (!p || p.socketId !== socket.id) return;

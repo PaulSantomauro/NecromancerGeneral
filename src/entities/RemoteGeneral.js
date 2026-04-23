@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import { createHpBar } from '../ui/HpBarSprite.js';
 import { getRenderTime } from '../systems/NetClock.js';
+import { GameEvent, events } from '../systems/EventSystem.js';
 
 export class RemoteGeneral {
   constructor(playerData) {
     this.id = playerData.id;
     this.name = playerData.name;
     this.connected = playerData.connected ?? true;
+    // `findNearest` (used by ally AI to pick targets during PvP) filters
+    // candidates by `.alive`. RemoteGenerals are removed from the scene
+    // the moment the server broadcasts general_died, so anything still
+    // in remoteGenerals is by definition live — expose the flag so the
+    // AI treats these as valid targets.
+    this.alive = true;
 
     this.position = new THREE.Vector3(playerData.pos.x, 0, playerData.pos.z);
     this._snaps = [];
@@ -24,6 +31,20 @@ export class RemoteGeneral {
 
   setHp(current, max) {
     this._hpBar.setHp(current, max);
+  }
+
+  // Called by CombatSystem when one of our local ally skeletons melees
+  // this general. General HP is server-authoritative (only the owner of
+  // the hitting ally may actually damage the server copy), so we don't
+  // touch local HP here — we emit a request and let main.js decide
+  // whether to forward it to the server. Subscribers filter by
+  // `attacker.ownerId === myId` so only the owning client reports.
+  takeDamage(dmg, attacker) {
+    events.emit(GameEvent.ALLY_HIT_GENERAL, {
+      targetId: this.id,
+      attacker,
+      dmg,
+    });
   }
 
   _build() {
