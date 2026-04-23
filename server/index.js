@@ -216,8 +216,7 @@ function resetRound() {
     UPDATE players SET
       souls = 0,
       upgrade_empower_self = 0,
-      upgrade_empower_allies = 0,
-      upgrade_reinforce_cap = 0
+      upgrade_empower_allies = 0
   `);
   db.default.exec('DELETE FROM allies');
 
@@ -244,7 +243,7 @@ function resetRound() {
   for (const p of players.values()) {
     p.hp = p.maxHp;
     p.souls = 0;
-    p.upgrades = { empower_self: 0, empower_allies: 0, reinforce_cap: 0 };
+    p.upgrades = { empower_self: 0, empower_allies: 0 };
     p.allies.clear();
     p.pos = randomSpawn();
   }
@@ -308,7 +307,6 @@ function hydrateWorld() {
       upgrades: {
         empower_self:   row.upgrade_empower_self,
         empower_allies: row.upgrade_empower_allies,
-        reinforce_cap:  row.upgrade_reinforce_cap,
       },
       connected: false,
       socketId: null,
@@ -392,7 +390,6 @@ io.on('connection', (socket) => {
         upgrades: {
           empower_self:   existing.upgrade_empower_self,
           empower_allies: existing.upgrade_empower_allies,
-          reinforce_cap:  existing.upgrade_reinforce_cap,
         },
         connected: true,
         socketId:  socket.id,
@@ -407,7 +404,7 @@ io.on('connection', (socket) => {
         maxHp: 40,
         souls: 0,
         energy: 60,
-        upgrades: { empower_self: 0, empower_allies: 0, reinforce_cap: 0 },
+        upgrades: { empower_self: 0, empower_allies: 0 },
         connected: true,
         socketId: socket.id,
         allies: new Set(),
@@ -524,8 +521,8 @@ io.on('connection', (socket) => {
     const p = players.get(playerId);
     if (!p || p.socketId !== socket.id) return;
 
-    const costs  = { empower_self: 5, empower_allies: 8, reinforce_cap: 10 };
-    const scales = { empower_self: 1.6, empower_allies: 1.7, reinforce_cap: 1.5 };
+    const costs  = { empower_self: 5, empower_allies: 8 };
+    const scales = { empower_self: 1.6, empower_allies: 1.7 };
     if (!(key in costs)) return;
 
     const current = p.upgrades[key] ?? 0;
@@ -539,7 +536,6 @@ io.on('connection', (socket) => {
       id: playerId,
       empower_self:   p.upgrades.empower_self,
       empower_allies: p.upgrades.empower_allies,
-      reinforce_cap:  p.upgrades.reinforce_cap,
     });
     db.updateSoulsAbs.run(p.souls, playerId);
 
@@ -1016,7 +1012,6 @@ function freshBootReset() {
       souls = 0,
       upgrade_empower_self = 0,
       upgrade_empower_allies = 0,
-      upgrade_reinforce_cap = 0,
       connected = 0
   `);
   db.default.exec('DELETE FROM allies');

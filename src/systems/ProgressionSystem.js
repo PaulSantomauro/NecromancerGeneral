@@ -13,24 +13,17 @@ const UPGRADE_META = {
     hotkey: 'E',
     label: 'Empower Allies',
   },
-  reinforce_cap: {
-    key: 'reinforce_cap',
-    hotkey: 'R',
-    label: 'Reinforce Cap',
-  },
 };
 
 export class ProgressionSystem {
-  constructor({ playerStats, battleDirector }) {
+  constructor({ playerStats }) {
     this.playerStats = playerStats;
-    this.battleDirector = battleDirector;
     this.config = playerConfig.upgrades;
 
     this.souls = 0;
     this.levels = {
       empower_self: 0,
       empower_allies: 0,
-      reinforce_cap: 0,
     };
     this.allyTier = 0;
     this.networked = false;
@@ -70,13 +63,8 @@ export class ProgressionSystem {
   resetForNewRound() {
     this.levels.empower_self = 0;
     this.levels.empower_allies = 0;
-    this.levels.reinforce_cap = 0;
     this.allyTier = 0;
     this.souls = 0;
-    if (this.battleDirector && this.battleDirector.config) {
-      this.battleDirector.maxAllies = this.battleDirector.config.maxAllies;
-      this.battleDirector.hostileSpawnBatchSize = this.battleDirector.config.hostileSpawnBatchSize;
-    }
     events.emit(GameEvent.SOULS_CHANGED, { total: 0, delta: 0 });
     events.emit(GameEvent.UPGRADE_PURCHASED, { key: '_restore', newLevel: 0 });
   }
@@ -88,19 +76,10 @@ export class ProgressionSystem {
     const prev = { ...this.levels };
     this.levels.empower_self   = upgrades.empower_self   ?? 0;
     this.levels.empower_allies = upgrades.empower_allies ?? 0;
-    this.levels.reinforce_cap  = upgrades.reinforce_cap  ?? 0;
 
     const deltaSelf = Math.max(0, this.levels.empower_self  - prev.empower_self);
-    const deltaCap  = Math.max(0, this.levels.reinforce_cap - prev.reinforce_cap);
-
     for (let i = 0; i < deltaSelf; i++) this.playerStats.applyEmpowerSelf();
     this.allyTier = this.levels.empower_allies;
-    if (this.battleDirector) {
-      for (let i = 0; i < deltaCap; i++) {
-        this.battleDirector.maxAllies += 3;
-        this.battleDirector.hostileSpawnBatchSize += 1;
-      }
-    }
 
     events.emit(GameEvent.UPGRADE_PURCHASED, { key: '_restore', newLevel: 0 });
   }
@@ -178,16 +157,10 @@ export class ProgressionSystem {
       case 'empower_allies':
         this.allyTier += 1;
         break;
-      case 'reinforce_cap':
-        if (this.battleDirector) {
-          this.battleDirector.maxAllies += 3;
-          this.battleDirector.hostileSpawnBatchSize += 1;
-        }
-        break;
     }
   }
 
   totalLevel() {
-    return this.levels.empower_self + this.levels.empower_allies + this.levels.reinforce_cap;
+    return this.levels.empower_self + this.levels.empower_allies;
   }
 }

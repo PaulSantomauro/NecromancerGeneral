@@ -83,7 +83,7 @@ export class SplashScreen {
           <div class="splash-ctrl">
             <span class="splash-ctrl-label">UPGRADE</span>
             <span class="splash-ctrl-keys">
-              <kbd>Q</kbd><kbd>E</kbd><kbd>R</kbd>
+              <kbd>Q</kbd><kbd>E</kbd>
             </span>
             <span class="splash-ctrl-hint">spend souls ☠</span>
           </div>

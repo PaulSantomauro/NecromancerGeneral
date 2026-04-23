@@ -232,7 +232,7 @@ const battleDirector = new BattleDirector({
   roundState,
 });
 
-const progression = new ProgressionSystem({ playerStats, battleDirector });
+const progression = new ProgressionSystem({ playerStats });
 battleDirector.progression = progression;
 player.progression = progression;
 

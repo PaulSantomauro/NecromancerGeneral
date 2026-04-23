@@ -18,7 +18,6 @@ db.exec(`
     energy                  REAL DEFAULT 80,
     upgrade_empower_self    INTEGER DEFAULT 0,
     upgrade_empower_allies  INTEGER DEFAULT 0,
-    upgrade_reinforce_cap   INTEGER DEFAULT 0,
     connected               INTEGER DEFAULT 0,
     last_seen               INTEGER
   );
@@ -66,8 +65,7 @@ export const updateSoulsAbs = db.prepare(`
 export const saveUpgrade = db.prepare(`
   UPDATE players SET
     upgrade_empower_self   = @empower_self,
-    upgrade_empower_allies = @empower_allies,
-    upgrade_reinforce_cap  = @reinforce_cap
+    upgrade_empower_allies = @empower_allies
   WHERE id = @id
 `);
 
