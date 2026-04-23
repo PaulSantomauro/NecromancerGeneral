@@ -9,6 +9,7 @@ import { buildAlliedTree } from './systems/BehaviorTree.js';
 import { BattleDirector } from './systems/BattleDirector.js';
 import { PlayerStats } from './systems/PlayerStats.js';
 import { ProgressionSystem } from './systems/ProgressionSystem.js';
+import { CareerSystem } from './systems/CareerSystem.js';
 import { NetworkSystem } from './systems/NetworkSystem.js';
 import { Projectile } from './entities/Projectile.js';
 import ammoConfig from './config/ammo.json';
@@ -23,7 +24,7 @@ import { PortalSystem } from './systems/PortalSystem.js';
 import { AudioSystem } from './systems/AudioSystem.js';
 import { MusicSystem } from './systems/MusicSystem.js';
 
-const WS_URL = import.meta.env?.VITE_WS_URL || 'http://localhost:2567';
+import { WS_URL } from './config/serverUrl.js';
 
 // Query parameters carry state when the player arrives via the Vibe Jam
 // webring (?portal=true&ref=…&username=…&hp=…&rotation_y=…). Parsed once
@@ -232,11 +233,12 @@ const battleDirector = new BattleDirector({
   roundState,
 });
 
-const progression = new ProgressionSystem({ playerStats, battleDirector });
+const progression = new ProgressionSystem({ playerStats });
+const career = new CareerSystem();
 battleDirector.progression = progression;
 player.progression = progression;
 
-const hud = new HUD({ playerStats, progression, roundState });
+const hud = new HUD({ playerStats, progression, roundState, career });
 
 // Hide lock prompt until welcome/restore
 const lockPrompt = document.getElementById('lock-prompt');
@@ -387,6 +389,16 @@ function onServerReady(data) {
   // and upgrade effects apply only after the server's upgrade_applied echo.
   progression.setNetworked(true);
 
+  // Seed the career store from the server's authoritative snapshot, and
+  // ingest rank info for every worldPlayer so their badges show up on
+  // first render instead of waiting for a state_tick or promotion event.
+  career.setMyId(myId);
+  if (data.career) career.setMyCareer(data.career);
+  if (data.worldPlayers) {
+    for (const wp of data.worldPlayers) career.noteRankFromPlayer(wp.id, wp.rank);
+  }
+  if (data.player?.rank) career.noteRankFromPlayer(myId, data.player.rank);
+
   reconcileRemotes(data);
   progression._overrideSouls(data.player.souls);
   progression._overrideUpgrades(data.player.upgrades);
@@ -533,6 +545,7 @@ events.subscribe(GameEvent.NET_STATE_TICK, ({ players: serverPlayers, round: ser
   }
 
   for (const sp of serverPlayers) {
+    if (sp.rank) career.noteRankFromPlayer(sp.id, sp.rank);
     if (sp.id === myId) continue;
     let rg = remoteGenerals.get(sp.id);
     if (!rg) {
@@ -597,6 +610,7 @@ events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {
 
 events.subscribe(GameEvent.NET_PLAYER_JOINED, ({ player: p }) => {
   if (p.id === myId) return;
+  career.noteRankFromPlayer(p.id, p.rank);
   if (!remoteGenerals.has(p.id)) {
     const rg = new RemoteGeneral(p);
     rg.setTarget(p.pos.x, p.pos.z, Date.now(), p.yaw);

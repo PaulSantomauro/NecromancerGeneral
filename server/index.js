@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 import * as db from './db.js';
+import { xpFor, levelFor, titleFor } from '../src/config/ranks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ammoConfig = JSON.parse(
@@ -127,6 +128,25 @@ const playerClearedAt = new Map(); // pid → epoch ms
 // Players who died this round; rejected from rejoin as active generals until round end.
 const deadThisRound = new Set();
 
+// ── Career stat bookkeeping ────────────────────────────────────────────────
+// Per-round tallies that survive killGeneral (dead players still earned
+// their kills and get the round counted). Flushed on goIdle / startNewRound.
+const roundKillsByPid     = new Map(); // pid → PvE kills this round
+const roundSoulsByPid     = new Map(); // pid → souls earned this round
+const participantsThisRnd = new Set(); // pid of anyone who was in the round
+// Session start per connected socket; consumed on disconnect to credit
+// time_played_sec on the career row.
+const sessionStartBySocket = new Map(); // socket.id → epoch ms
+// Player id per connected socket, set on successful `join`. Kept so we
+// can credit time_played even when killGeneral has already removed the
+// player from the live `players` map (dead spectators still racked up
+// session time before they disconnect).
+const playerIdBySocket     = new Map(); // socket.id → playerId
+// Last known level per player so we can detect promotions and emit
+// `career_promoted` only on the transition (kills/hostile events don't
+// need to spam a 'your level is still 3' broadcast every tick).
+const careerLevelByPid    = new Map(); // pid → last broadcast level
+
 function computeFogRadius() {
   const elapsed = (Date.now() - round.startedAt) / 1000;
   const k = Math.max(0, Math.min(1, elapsed / FOG_TIME));
@@ -166,6 +186,56 @@ function socketsInRoom() {
   return io.sockets.adapter.rooms.get(ROOM)?.size ?? 0;
 }
 
+// ── Career helpers ────────────────────────────────────────────────────────
+function rankPayload(row) {
+  if (!row) return null;
+  const xp = xpFor(row);
+  const level = levelFor(xp);
+  return {
+    xp,
+    level,
+    title: titleFor(level),
+    rounds_played:    row.rounds_played    ?? 0,
+    rounds_won:       row.rounds_won       ?? 0,
+    pve_kills:        row.pve_kills        ?? 0,
+    pvp_kills:        row.pvp_kills        ?? 0,
+    deaths:           row.deaths           ?? 0,
+    souls_lifetime:   row.souls_lifetime   ?? 0,
+    best_round_kills: row.best_round_kills ?? 0,
+    best_round_souls: row.best_round_souls ?? 0,
+    time_played_sec:  row.time_played_sec  ?? 0,
+  };
+}
+
+// After any DB increment that could have crossed a rank threshold, call
+// this with the affected player's id. It re-reads the row, recomputes the
+// level, compares to `careerLevelByPid`, and emits `career_promoted` to
+// the room if the player jumped up. Callers don't need to guess which
+// increments can cause promotions — this is cheap and idempotent.
+function checkPromotion(playerId, pname) {
+  const row = db.getCareer.get(playerId);
+  if (!row) return;
+  const level = levelFor(xpFor(row));
+  const title = titleFor(level);
+  // Keep the in-memory rank cache on the live player record fresh so the
+  // next serializePlayer / state_tick carries the new badge automatically.
+  const mem = players.get(playerId);
+  if (mem) mem.rank = { level, title };
+
+  const prev = careerLevelByPid.get(playerId);
+  careerLevelByPid.set(playerId, level);
+  // First time we see this player in the session: seed, don't announce.
+  if (prev === undefined) return;
+  if (level > prev) {
+    io.to(ROOM).emit('career_promoted', {
+      playerId,
+      name: pname ?? null,
+      level,
+      title,
+    });
+  }
+}
+
 // Park the round in the idle phase. Called when the last connected player
 // leaves — wipes transient round bookkeeping so the next joiner kicks off a
 // fresh PvE round via `resetRound()` rather than inheriting a half-finished
@@ -184,6 +254,9 @@ function goIdle() {
   hostilesByPlayer.clear();
   playerClearedAt.clear();
   deadThisRound.clear();
+  roundKillsByPid.clear();
+  roundSoulsByPid.clear();
+  participantsThisRnd.clear();
   console.log('[round] idle — waiting for players');
 }
 
@@ -201,6 +274,9 @@ function startNewRound() {
   hostilesByPlayer.clear();
   playerClearedAt.clear();
   deadThisRound.clear();
+  roundKillsByPid.clear();
+  roundSoulsByPid.clear();
+  participantsThisRnd.clear();
 }
 
 // Called RESTART_DELAY_MS after endRound. Wipes per-round progression
@@ -216,8 +292,7 @@ function resetRound() {
     UPDATE players SET
       souls = 0,
       upgrade_empower_self = 0,
-      upgrade_empower_allies = 0,
-      upgrade_reinforce_cap = 0
+      upgrade_empower_allies = 0
   `);
   db.default.exec('DELETE FROM allies');
 
@@ -244,7 +319,7 @@ function resetRound() {
   for (const p of players.values()) {
     p.hp = p.maxHp;
     p.souls = 0;
-    p.upgrades = { empower_self: 0, empower_allies: 0, reinforce_cap: 0 };
+    p.upgrades = { empower_self: 0, empower_allies: 0 };
     p.allies.clear();
     p.pos = randomSpawn();
   }
@@ -269,6 +344,37 @@ function endRound(winnerId) {
   round.winnerId = winnerId;
   io.to(ROOM).emit('round_ended', { winnerId, t: round.endedAt, restartAt: round.restartAt });
   console.log(`[round] winner = ${winnerId || '(none)'} — next round in ${RESTART_DELAY_MS / 1000}s`);
+
+  // Commit career stats for everyone who participated in this round. The
+  // set includes dead spectators (killGeneral's target) and the winner
+  // alike — if you played, you get the round counted. Best-round-kills /
+  // souls are MAX()ed in SQL so a lower round doesn't overwrite a record.
+  const now = Date.now();
+  for (const pid of participantsThisRnd) {
+    const isWinner = (pid === winnerId) ? 1 : 0;
+    const kills = roundKillsByPid.get(pid) ?? 0;
+    const souls = roundSoulsByPid.get(pid) ?? 0;
+    // Snapshot XP before committing so the client doesn't have to guess
+    // the delta from per-stat formulas — we ship the exact XP gained.
+    const before = db.getCareer.get(pid);
+    const beforeXp = xpFor(before);
+    db.commitRoundPlayed.run(isWinner, kills, souls, now, pid);
+    const after = db.getCareer.get(pid);
+    const xpGained = xpFor(after) - beforeXp;
+
+    const name = players.get(pid)?.name ?? null;
+    checkPromotion(pid, name);
+    const p = players.get(pid);
+    if (p?.socketId) {
+      io.to(p.socketId).emit('career_round_summary', {
+        xpGained,
+        kills,
+        souls,
+        won: !!isWinner,
+        career: rankPayload(after),
+      });
+    }
+  }
 }
 
 function serializeRound() {
@@ -308,7 +414,6 @@ function hydrateWorld() {
       upgrades: {
         empower_self:   row.upgrade_empower_self,
         empower_allies: row.upgrade_empower_allies,
-        reinforce_cap:  row.upgrade_reinforce_cap,
       },
       connected: false,
       socketId: null,
@@ -330,6 +435,10 @@ function serializePlayer(p) {
     souls: p.souls,
     upgrades: p.upgrades,
     connected: p.connected,
+    // Rank is cached on the in-memory player and refreshed on promotion,
+    // so including it here is free (no per-tick DB read) and gives every
+    // state_tick recipient the badge info for every other general.
+    rank: p.rank ?? null,
   };
 }
 
@@ -348,6 +457,39 @@ const io = new Server(httpServer, { cors: { origin: ALLOWED_ORIGINS } });
 
 io.on('connection', (socket) => {
   console.log(`[io] connection ${socket.id}`);
+  sessionStartBySocket.set(socket.id, Date.now());
+
+  // Splash-screen queries: the client can open a socket BEFORE emitting
+  // `join`, just to fetch career stats and leaderboards. These handlers
+  // read-only against the DB and don't touch round state.
+  socket.on('career_fetch', ({ playerId }) => {
+    if (typeof playerId !== 'string' || !playerId) {
+      socket.emit('career_response', { career: null });
+      return;
+    }
+    const row = db.getCareer.get(playerId);
+    socket.emit('career_response', { career: row ? rankPayload(row) : null });
+  });
+
+  socket.on('leaderboard_fetch', ({ tab }) => {
+    // Tabs: 'rank' (XP-sorted in JS), 'wins' (SQL-sorted), 'pve' (SQL-sorted)
+    let rows;
+    if (tab === 'pve') {
+      rows = db.getLeaderboardByPveKills.all();
+    } else if (tab === 'wins') {
+      rows = db.getLeaderboardByWins.all();
+    } else {
+      // 'rank' tab — fetch all qualifying rows, sort by XP in JS.
+      rows = db.getLeaderboardAll.all();
+      rows.sort((a, b) => xpFor(b) - xpFor(a));
+    }
+    const top = rows.slice(0, 20).map(row => ({
+      playerId: row.player_id,
+      name:     row.name || 'Unknown',
+      ...rankPayload(row),
+    }));
+    socket.emit('leaderboard_response', { tab: tab || 'rank', entries: top });
+  });
 
   socket.on('join', ({ playerId, name }) => {
     socket.join(ROOM);
@@ -392,7 +534,6 @@ io.on('connection', (socket) => {
         upgrades: {
           empower_self:   existing.upgrade_empower_self,
           empower_allies: existing.upgrade_empower_allies,
-          reinforce_cap:  existing.upgrade_reinforce_cap,
         },
         connected: true,
         socketId:  socket.id,
@@ -407,7 +548,7 @@ io.on('connection', (socket) => {
         maxHp: 40,
         souls: 0,
         energy: 60,
-        upgrades: { empower_self: 0, empower_allies: 0, reinforce_cap: 0 },
+        upgrades: { empower_self: 0, empower_allies: 0 },
         connected: true,
         socketId: socket.id,
         allies: new Set(),
@@ -424,11 +565,24 @@ io.on('connection', (socket) => {
       last_seen: Date.now(),
     });
 
+    // Seed the career row if this is the player's first time. Safe to call
+    // every join — INSERT OR IGNORE is a no-op for existing rows. Read the
+    // row afterwards to cache the rank on the live in-memory player.
+    db.seedCareer.run({ player_id: playerId, now: Date.now() });
+    const careerRow = db.getCareer.get(playerId);
+    const careerLevel = levelFor(xpFor(careerRow));
+    playerState.rank = { level: careerLevel, title: titleFor(careerLevel) };
+    // Seed the promotion cache silently so the first post-join increment
+    // doesn't falsely announce a "promotion" from 0 → 0.
+    careerLevelByPid.set(playerId, careerLevel);
+    playerIdBySocket.set(socket.id, playerId);
+
     const allPlayers = [...players.values()].map(serializePlayer);
 
     const payload = {
       player: serializePlayer(playerState),
       worldPlayers: allPlayers.filter(p => p.id !== playerId),
+      career: rankPayload(careerRow),
     };
 
     if (existing) {
@@ -518,14 +672,22 @@ io.on('connection', (socket) => {
     p.souls += b;
     db.updateSoulsAbs.run(p.souls, playerId);
     io.to(ROOM).emit('souls_granted', { playerId, amount: b, total: p.souls });
+
+    // Career stats: one more PvE kill, credit bounty toward lifetime souls,
+    // tally round-kills for the best_round_kills MAX at endRound.
+    db.incPveKill.run(b, Date.now(), playerId);
+    roundKillsByPid.set(playerId, (roundKillsByPid.get(playerId) ?? 0) + 1);
+    roundSoulsByPid.set(playerId, (roundSoulsByPid.get(playerId) ?? 0) + b);
+    participantsThisRnd.add(playerId);
+    checkPromotion(playerId, p.name);
   });
 
   socket.on('upgrade_purchase', ({ playerId, key }) => {
     const p = players.get(playerId);
     if (!p || p.socketId !== socket.id) return;
 
-    const costs  = { empower_self: 5, empower_allies: 8, reinforce_cap: 10 };
-    const scales = { empower_self: 1.6, empower_allies: 1.7, reinforce_cap: 1.5 };
+    const costs  = { empower_self: 5, empower_allies: 8 };
+    const scales = { empower_self: 1.6, empower_allies: 1.7 };
     if (!(key in costs)) return;
 
     const current = p.upgrades[key] ?? 0;
@@ -539,7 +701,6 @@ io.on('connection', (socket) => {
       id: playerId,
       empower_self:   p.upgrades.empower_self,
       empower_allies: p.upgrades.empower_allies,
-      reinforce_cap:  p.upgrades.reinforce_cap,
     });
     db.updateSoulsAbs.run(p.souls, playerId);
 
@@ -548,6 +709,23 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     rateBuckets.delete(socket.id);
+
+    // Credit time_played_sec against the career row. Use the socket→pid
+    // map (not the live players Map) so dead spectators whose `players`
+    // entry was removed by killGeneral still get their session time.
+    // Splash-only sockets never populated `playerIdBySocket`, so they're
+    // naturally skipped.
+    const startedAt = sessionStartBySocket.get(socket.id);
+    const pidForSession = playerIdBySocket.get(socket.id);
+    sessionStartBySocket.delete(socket.id);
+    playerIdBySocket.delete(socket.id);
+    if (startedAt && pidForSession) {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      if (elapsedSec > 0) {
+        db.addTimePlayed.run(elapsedSec, Date.now(), pidForSession);
+      }
+    }
+
     for (const [pid, p] of players) {
       if (p.socketId !== socket.id) continue;
       // During PvP, a disconnect counts as a forfeit/death so a single
@@ -837,6 +1015,13 @@ function killGeneral(target, killerId) {
   target.allies.clear();
   deadThisRound.add(target.id);
   io.to(ROOM).emit('general_died', { playerId: target.id, killedBy: killerId || null });
+
+  // Career stats: death always counts. Do this BEFORE deleting from players
+  // so target.name is still available for the promotion check log.
+  const now = Date.now();
+  db.incDeath.run(now, target.id);
+  participantsThisRnd.add(target.id);
+
   players.delete(target.id);
   hostilesByPlayer.delete(target.id);
   playerClearedAt.delete(target.id);
@@ -846,6 +1031,12 @@ function killGeneral(target, killerId) {
       shooter.souls += 3;
       db.updateSoulsAbs.run(shooter.souls, killerId);
       io.to(ROOM).emit('souls_granted', { playerId: killerId, amount: 3, total: shooter.souls });
+      // Career: PvP kill (with the +3 soul bounty rolled into the same
+      // UPDATE for write efficiency — see incPvpKill in db.js).
+      db.incPvpKill.run(3, now, killerId);
+      roundSoulsByPid.set(killerId, (roundSoulsByPid.get(killerId) ?? 0) + 3);
+      participantsThisRnd.add(killerId);
+      checkPromotion(killerId, shooter.name);
     }
   }
   maybeEndRound();
@@ -1016,7 +1207,6 @@ function freshBootReset() {
       souls = 0,
       upgrade_empower_self = 0,
       upgrade_empower_allies = 0,
-      upgrade_reinforce_cap = 0,
       connected = 0
   `);
   db.default.exec('DELETE FROM allies');

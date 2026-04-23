@@ -1,5 +1,6 @@
 import { GameEvent, events } from '../systems/EventSystem.js';
 import ammoConfig from '../config/ammo.json';
+import { progressFor } from '../config/ranks.js';
 
 const AMMO_CLASSES = Object.keys(ammoConfig).map(k => `ammo-${k}`);
 
@@ -13,10 +14,11 @@ function escapeHtml(s) {
 }
 
 export class HUD {
-  constructor({ playerStats, progression, roundState = null }) {
+  constructor({ playerStats, progression, roundState = null, career = null }) {
     this.playerStats = playerStats;
     this.progression = progression;
     this.roundState = roundState;
+    this.career = career;
 
     this.hostiles = document.getElementById('battle-hostiles');
     this.allies   = document.getElementById('battle-allies');
@@ -73,6 +75,36 @@ export class HUD {
         level: row.querySelector('.upgrade-level'),
         cost:  row.querySelector('.upgrade-cost'),
       };
+    });
+
+    // Career XP panel inside the round-end overlay, plus promotion toast.
+    this.roundOverlayXp = document.getElementById('round-overlay-xp');
+    this.xpDelta        = document.getElementById('xp-delta');
+    this.xpRankTitle    = document.getElementById('xp-rank-title');
+    this.xpRankDetail   = document.getElementById('xp-rank-detail');
+    this.xpBarFill      = document.getElementById('xp-bar-fill');
+    this.promoToast     = document.getElementById('promotion-toast');
+    this._promoTimer    = null;
+    this._lastRoundSummary = null;
+
+    // Listen for the server's round summary (delivered at endRound to each
+    // player individually) — use it to populate the XP panel in the
+    // round-end overlay.
+    events.subscribe(GameEvent.NET_CAREER_SUMMARY, (payload) => {
+      this._lastRoundSummary = payload;
+      this._renderXpPanel();
+    });
+
+    // Promotion: show a toast when the local player crosses a rank
+    // threshold. Careful not to fire on the initial seed event — that
+    // one has reason='initial' and no prevLevel bump.
+    events.subscribe(GameEvent.CAREER_UPDATED, (evt) => {
+      if (!evt?.isMe) return;
+      if (evt.reason === 'promoted' || (evt.reason === 'round_summary' && evt.level > (evt.prevLevel ?? evt.level))) {
+        if (evt.level > (evt.prevLevel ?? -1) || evt.reason === 'promoted') {
+          this._showPromotionToast(evt.level, evt.title);
+        }
+      }
     });
 
     events.subscribe(GameEvent.BATTLE_TICK, (d) => {
@@ -150,9 +182,17 @@ export class HUD {
     events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {
       const victim = this._resolveName(playerId);
       const killer = killedBy ? this._resolveName(killedBy) : null;
-      const text = killer ? `${victim} fell to ${killer}` : `${victim} was claimed by the fog`;
+      // Rank badges lifted from the career cache — purely decorative, so
+      // skip them silently if we haven't seen this player's rank yet.
+      const victimRank = this.career?.getRank(playerId);
+      const killerRank = killedBy ? this.career?.getRank(killedBy) : null;
+      const victimHtml = victimRank ? `<span class="kf-badge">L${victimRank.level}</span> ${escapeHtml(victim)}` : escapeHtml(victim);
+      const killerHtml = killerRank ? `<span class="kf-badge">L${killerRank.level}</span> ${escapeHtml(killer)}` : escapeHtml(killer ?? '');
+      const textHtml = killer
+        ? `${victimHtml} fell to ${killerHtml}`
+        : `${victimHtml} was claimed by the fog`;
       const mine = (this._myId && (playerId === this._myId || killedBy === this._myId));
-      this._addKillFeedEntry(text, mine);
+      this._addKillFeedEntry(textHtml, mine, { asHtml: true });
     });
 
     events.subscribe(GameEvent.PHASE_TRANSITION, ({ to }) => {
@@ -280,11 +320,11 @@ export class HUD {
     return this._nameById.get(id) || id.slice(0, 6);
   }
 
-  _addKillFeedEntry(text, mine) {
+  _addKillFeedEntry(text, mine, { asHtml = false } = {}) {
     if (!this.killFeed) return;
     const el = document.createElement('div');
     el.className = mine ? 'kill-feed-entry mine' : 'kill-feed-entry';
-    el.textContent = text;
+    if (asHtml) el.innerHTML = text; else el.textContent = text;
     this.killFeed.appendChild(el);
     this._killFeedEntries.push({ el, at: performance.now() });
     while (this._killFeedEntries.length > KILL_FEED_MAX) {
@@ -330,14 +370,75 @@ export class HUD {
       if (isMe) classes.push('lb-me');
       const displayName = p.name || p.id.slice(0, 6);
       const medal = isWin ? '♚' : `${i + 1}.`;
+      // Rank badge from the cached career ranks. Falls back to nothing if
+      // we haven't seen a rank for this player yet (e.g. bot/disconnected).
+      const rank = this.career?.getRank(p.id);
+      const rankBadge = rank
+        ? `<span class="lb-badge" title="${escapeHtml(rank.title)}">L${rank.level}</span>`
+        : '<span class="lb-badge lb-badge-empty"></span>';
       return `
         <div class="${classes.join(' ')}">
           <span class="lb-rank">${medal}</span>
+          ${rankBadge}
           <span class="lb-name">${escapeHtml(displayName)}${isMe ? ' <em>(you)</em>' : ''}</span>
           <span class="lb-souls">${p.souls ?? 0}☠</span>
         </div>`;
     }).join('');
     this.roundOverlayLeaderboard.innerHTML = html;
+  }
+
+  // Populates the career XP panel in the round-end overlay. Called when a
+  // NET_CAREER_SUMMARY payload lands (server commits career at endRound)
+  // and any time the overlay opens while we already have a summary. Hidden
+  // unless the current round actually produced a summary — e.g. a mid-
+  // round rejoin won't show one until the next endRound fires.
+  _renderXpPanel() {
+    if (!this.roundOverlayXp) return;
+    const s = this._lastRoundSummary;
+    if (!s || !s.career) {
+      this.roundOverlayXp.classList.add('hidden');
+      return;
+    }
+    // xpGained is computed server-side as (xp_after - xp_before) against
+    // the authoritative career row, so it already reflects PvE kills,
+    // round completion, and a win bonus if applicable. Client just
+    // displays it.
+    const gained = Math.max(0, s.xpGained ?? 0);
+    const prog = progressFor(s.career.xp ?? 0);
+    const pct = Math.round(prog.progress * 100);
+    this.roundOverlayXp.classList.remove('hidden');
+    this.xpDelta.textContent = `+${gained.toLocaleString()} XP`;
+    this.xpRankTitle.textContent = `L${prog.current.level} · ${prog.current.title}`;
+    this.xpRankDetail.textContent = prog.next
+      ? `${(prog.xpForLevel - prog.xpIntoLevel).toLocaleString()} XP → ${prog.next.title}`
+      : 'Max rank reached';
+    // Defer the width set one frame so the transition from 0 actually
+    // animates on a freshly-opened overlay.
+    this.xpBarFill.style.width = '0%';
+    requestAnimationFrame(() => {
+      this.xpBarFill.style.width = `${pct}%`;
+    });
+  }
+
+  // Slide-in toast at the top of the screen announcing a new rank. Auto-
+  // dismisses after a few seconds. Rank badges cached in CareerSystem are
+  // already refreshed by the time this fires, so any kill feed / round-
+  // end leaderboard that renders afterward picks up the new title without
+  // needing a signal from here.
+  _showPromotionToast(level, title) {
+    if (!this.promoToast) return;
+    const titleEl = this.promoToast.querySelector('.promo-title');
+    if (titleEl) titleEl.textContent = `L${level} · ${title}`;
+    this.promoToast.classList.remove('hidden');
+    this.promoToast.classList.remove('promo-out');
+    void this.promoToast.offsetWidth; // force reflow so re-adding `promo-in` restarts the animation
+    this.promoToast.classList.add('promo-in');
+    if (this._promoTimer) clearTimeout(this._promoTimer);
+    this._promoTimer = setTimeout(() => {
+      this.promoToast.classList.remove('promo-in');
+      this.promoToast.classList.add('promo-out');
+      setTimeout(() => this.promoToast?.classList.add('hidden'), 400);
+    }, 3400);
   }
 
   _renderRound() {
@@ -352,8 +453,10 @@ export class HUD {
         this._winnerShown = false;
         this._rejoinDenied = false;
         this._overlayIsWinner = false;
+        this._lastRoundSummary = null;
         this.roundOverlay.classList.add('hidden');
         this.roundOverlay.classList.remove('victory');
+        if (this.roundOverlayXp) this.roundOverlayXp.classList.add('hidden');
         if (this.roundOverlayLeaderboard) this.roundOverlayLeaderboard.innerHTML = '';
         // Clear the kill-feed on round restart so old deaths don't bleed
         // into the new round.

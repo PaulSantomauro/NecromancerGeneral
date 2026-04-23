@@ -17,8 +17,7 @@
   "sprintMultiplier": 1.6,
   "sprintEnergyPerSec": 14,
   "upgrades": {
-    "empower_self":   { "baseCost": 5,  "scale": 1.6 },
-    "empower_allies": { "baseCost": 8,  "scale": 1.7 },
-    "reinforce_cap":  { "baseCost": 10, "scale": 1.5 }
+    "empower_self":   { "baseCost": 5, "scale": 1.6 },
+    "empower_allies": { "baseCost": 8, "scale": 1.7 }
   }
 }

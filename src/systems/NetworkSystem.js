@@ -48,6 +48,25 @@ export class NetworkSystem {
     this.socket.on('player_fire_remote',  (d) => events.emit(GameEvent.NET_PLAYER_FIRED_REMOTE, d));
     this.socket.on('round_ended',         (d) => events.emit(GameEvent.NET_ROUND_ENDED, d));
     this.socket.on('rejoin_denied',       (d) => events.emit(GameEvent.NET_ROUND_ENDED, { ...d, rejoinDenied: true }));
+    this.socket.on('career_promoted',      (d) => events.emit(GameEvent.NET_CAREER_PROMOTED, d));
+    this.socket.on('career_round_summary', (d) => events.emit(GameEvent.NET_CAREER_SUMMARY, d));
+  }
+
+  // Splash-screen helpers: these fire before `join`, on a separate socket
+  // if the caller wants. Safe to call repeatedly — server treats them as
+  // read-only DB queries.
+  fetchCareer(playerId, cb) {
+    if (!this.socket) return;
+    const handler = (payload) => { this.socket.off('career_response', handler); cb(payload); };
+    this.socket.on('career_response', handler);
+    this.socket.emit('career_fetch', { playerId });
+  }
+
+  fetchLeaderboard(tab, cb) {
+    if (!this.socket) return;
+    const handler = (payload) => { this.socket.off('leaderboard_response', handler); cb(payload); };
+    this.socket.on('leaderboard_response', handler);
+    this.socket.emit('leaderboard_fetch', { tab });
   }
 
   sendMove(position, yaw) {

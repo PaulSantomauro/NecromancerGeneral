@@ -705,6 +705,158 @@ kbd {
   max-width: 440px;
 }
 
+/* === Splash: returning-player career card ============================== */
+.splash-career {
+  width: 100%;
+  max-width: 460px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(50, 30, 70, 0.85), rgba(28, 18, 40, 0.85));
+  border: 1px solid rgba(190, 130, 230, 0.35);
+  border-radius: 8px;
+  color: #e8dbf4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 20px rgba(100, 40, 180, 0.2);
+}
+.splash-career.hidden { display: none; }
+.splash-career .c-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  letter-spacing: 0.4px;
+}
+.splash-career .c-welcome strong { color: #f2e3ff; font-weight: 700; }
+.splash-career .c-xp { color: #d6b8ff; font-weight: 700; font-variant-numeric: tabular-nums; }
+.splash-career .c-rank {
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  color: #e8dbf4;
+}
+.splash-career .c-rank .c-next { color: #ffd27a; font-weight: 700; }
+.splash-career .c-rank em { color: #ffd27a; font-style: italic; }
+.splash-career .c-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.splash-career .c-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #b966ff, #ff8a3a);
+  transition: width 260ms ease-out;
+}
+.splash-career .c-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  color: #b9a8ca;
+  letter-spacing: 0.3px;
+}
+.splash-career .c-stats strong {
+  color: #f2e3ff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* === Splash: leaderboard ============================================== */
+.splash-leaderboard {
+  width: 100%;
+  max-width: 460px;
+  padding: 10px 12px;
+  background: rgba(20, 14, 28, 0.55);
+  border: 1px solid rgba(180, 100, 220, 0.2);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.splash-lb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.splash-lb-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #b894d8;
+  text-transform: uppercase;
+}
+.splash-lb-tabs { display: flex; gap: 2px; }
+.splash-lb-tab {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  padding: 4px 8px;
+  background: transparent;
+  color: #988c9e;
+  border: 1px solid rgba(180, 100, 220, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-weight: 600;
+  transition: color 120ms, background 120ms, border-color 120ms;
+}
+.splash-lb-tab:hover { color: #e8dbf4; border-color: rgba(190, 130, 230, 0.5); }
+.splash-lb-tab.active {
+  color: #f2e3ff;
+  background: rgba(120, 60, 180, 0.35);
+  border-color: rgba(190, 130, 230, 0.65);
+}
+.splash-lb-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.splash-lb-empty {
+  color: #988c9e;
+  font-size: 11px;
+  font-style: italic;
+  padding: 6px 4px;
+}
+.splash-lb-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 1.3fr auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: #c9bcda;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.splash-lb-row:nth-child(odd) { background: rgba(255, 255, 255, 0.025); }
+.splash-lb-row .lb-rank { color: #988c9e; text-align: right; font-weight: 700; }
+.splash-lb-row .lb-title {
+  color: #d6b8ff;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.splash-lb-row .lb-name {
+  color: #f2e3ff;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.splash-lb-row .lb-stat {
+  color: #a497b4;
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
 /* === Kill feed — top-right stack below the stats panel === */
 #kill-feed {
   position: absolute;
@@ -735,6 +887,19 @@ kbd {
   color: #ffe4a0;
   background: rgba(30, 16, 8, 0.82);
   box-shadow: 0 0 12px rgba(255, 180, 80, 0.25);
+}
+.kf-badge {
+  display: inline-block;
+  padding: 0 5px;
+  margin: 0 2px 0 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #f2e3ff;
+  background: rgba(120, 60, 180, 0.45);
+  border: 1px solid rgba(190, 130, 230, 0.4);
+  border-radius: 3px;
+  vertical-align: 1px;
 }
 @keyframes kill-feed-slide {
   from { transform: translateX(20px); opacity: 0; }
@@ -831,3 +996,131 @@ kbd {
 .lb-name { text-align: left; }
 .lb-name em { font-style: normal; opacity: 0.6; font-size: 11px; }
 .lb-souls { color: #d6a8ff; font-weight: 800; text-align: right; }
+
+/* === Round-end overlay: career XP panel ========================= */
+#round-overlay-xp {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(40, 22, 60, 0.85), rgba(22, 14, 32, 0.85));
+  border: 1px solid rgba(190, 130, 230, 0.3);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 440px;
+}
+#round-overlay-xp.hidden { display: none; }
+#round-overlay-xp .xp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  color: #b894d8;
+  text-transform: uppercase;
+}
+#round-overlay-xp .xp-delta {
+  color: #ffd27a;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0.3px;
+}
+#round-overlay-xp .xp-title-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  color: #e8dbf4;
+  font-weight: 600;
+}
+#round-overlay-xp #xp-rank-title { color: #f2e3ff; }
+#round-overlay-xp #xp-rank-detail { color: #a497b4; font-size: 11px; font-weight: 500; }
+#round-overlay-xp .xp-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+#round-overlay-xp .xp-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #b966ff, #ff8a3a);
+  transition: width 720ms ease-out;
+}
+
+/* === Round-end leaderboard rank badge ============================== */
+#round-overlay-leaderboard .lb-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #f2e3ff;
+  background: rgba(120, 60, 180, 0.45);
+  border: 1px solid rgba(190, 130, 230, 0.4);
+  border-radius: 3px;
+  justify-self: start;
+}
+#round-overlay-leaderboard .lb-badge-empty {
+  padding: 1px 6px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  /* Keeps the grid column aligned even when the rank is unknown. */
+  visibility: hidden;
+}
+/* Inject a new column for the badge between rank# and name. */
+#round-overlay-leaderboard .lb-row {
+  grid-template-columns: 28px auto 1fr auto;
+}
+
+/* === Promotion toast ============================================== */
+#promotion-toast {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  padding: 10px 22px 12px;
+  background: linear-gradient(180deg, rgba(70, 40, 110, 0.96), rgba(30, 14, 50, 0.96));
+  border: 1px solid rgba(255, 210, 122, 0.7);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(185, 102, 255, 0.35), 0 0 16px rgba(255, 210, 122, 0.25);
+  text-align: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms ease-out, transform 320ms ease-out;
+}
+#promotion-toast.hidden { display: none; }
+#promotion-toast.promo-in {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#promotion-toast.promo-out {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-20px);
+}
+#promotion-toast .promo-top {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #ffd27a;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+#promotion-toast .promo-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #f2e3ff;
+  letter-spacing: 0.6px;
+  text-shadow: 0 0 10px rgba(185, 102, 255, 0.6);
+}
+#promotion-toast .promo-sub {
+  font-size: 11px;
+  color: #b9a8ca;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}

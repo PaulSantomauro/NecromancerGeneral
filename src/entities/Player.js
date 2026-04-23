@@ -149,7 +149,6 @@ export class Player {
       if (k === '7') this._setAmmo(6);
       if (k === 'q') this._purchase('empower_self');
       if (k === 'e') this._purchase('empower_allies');
-      if (k === 'r') this._purchase('reinforce_cap');
     });
     window.addEventListener('keyup', (e) => {
       const k = e.key.toLowerCase();

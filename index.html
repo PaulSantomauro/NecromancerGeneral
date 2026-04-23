@@ -37,7 +37,7 @@
       <div class="control-row"><kbd>LMB</kbd> fire</div>
       <div class="control-row"><kbd>RMB</kbd> attack-move army</div>
       <div class="control-row"><kbd>Scroll</kbd> / <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> ammo</div>
-      <div class="control-row"><kbd>Q</kbd> <kbd>E</kbd> <kbd>R</kbd> upgrade</div>
+      <div class="control-row"><kbd>Q</kbd> <kbd>E</kbd> upgrade</div>
     </div>
 
     <div id="hud-stats">
@@ -94,12 +94,6 @@
         <span class="upgrade-level">L0</span>
         <span class="upgrade-cost">8☠</span>
       </div>
-      <div class="upgrade-row" data-key="reinforce_cap">
-        <span class="upgrade-hotkey">R</span>
-        <span class="upgrade-label">Reinforce Cap</span>
-        <span class="upgrade-level">L0</span>
-        <span class="upgrade-cost">10☠</span>
-      </div>
     </div>
 
     <div id="crosshair-wrap">
@@ -124,6 +118,23 @@
       <div id="round-overlay-title">You have fallen</div>
       <div id="round-overlay-sub">Spectating — await the round&rsquo;s end.</div>
       <div id="round-overlay-leaderboard"></div>
+      <div id="round-overlay-xp" class="hidden">
+        <div class="xp-head">
+          <span class="xp-label">Career</span>
+          <span id="xp-delta" class="xp-delta">+0 XP</span>
+        </div>
+        <div class="xp-title-line">
+          <span id="xp-rank-title">Conscript</span>
+          <span id="xp-rank-detail"></span>
+        </div>
+        <div class="xp-bar"><div id="xp-bar-fill" class="xp-bar-fill"></div></div>
+      </div>
+    </div>
+
+    <div id="promotion-toast" class="hidden" aria-live="polite">
+      <div class="promo-top">Promotion!</div>
+      <div class="promo-title"></div>
+      <div class="promo-sub">You've been promoted.</div>
     </div>
   </div>
   <script type="module" src="/src/main.js"></script>
