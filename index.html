@@ -118,6 +118,23 @@
       <div id="round-overlay-title">You have fallen</div>
       <div id="round-overlay-sub">Spectating — await the round&rsquo;s end.</div>
       <div id="round-overlay-leaderboard"></div>
+      <div id="round-overlay-xp" class="hidden">
+        <div class="xp-head">
+          <span class="xp-label">Career</span>
+          <span id="xp-delta" class="xp-delta">+0 XP</span>
+        </div>
+        <div class="xp-title-line">
+          <span id="xp-rank-title">Conscript</span>
+          <span id="xp-rank-detail"></span>
+        </div>
+        <div class="xp-bar"><div id="xp-bar-fill" class="xp-bar-fill"></div></div>
+      </div>
+    </div>
+
+    <div id="promotion-toast" class="hidden" aria-live="polite">
+      <div class="promo-top">Promotion!</div>
+      <div class="promo-title"></div>
+      <div class="promo-sub">You've been promoted.</div>
     </div>
   </div>
   <script type="module" src="/src/main.js"></script>
