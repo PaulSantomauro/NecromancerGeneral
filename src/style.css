@@ -1124,3 +1124,105 @@ kbd {
   letter-spacing: 0.5px;
   margin-top: 2px;
 }
+
+/* === Zone capture — in-progress bottom-center indicator ============= */
+#capture-indicator {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 240px;
+  padding: 8px 16px 10px;
+  background: rgba(10, 8, 16, 0.75);
+  border: 1px solid rgba(100, 255, 160, 0.45);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 12px;
+  color: #d8ffe4;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 12px rgba(100, 255, 160, 0.2);
+  z-index: 150;
+  pointer-events: none;
+}
+#capture-indicator.hidden { display: none; }
+#capture-indicator .cap-label {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+#capture-indicator #cap-zone-name {
+  color: #aaffcc;
+  font-weight: 800;
+}
+#capture-indicator .cap-bar {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+#capture-indicator .cap-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #33cc88, #aaff99);
+  transition: width 120ms linear;
+}
+#capture-indicator .cap-sub {
+  font-size: 10px;
+  color: #8fbfa2;
+  letter-spacing: 0.4px;
+}
+
+/* === Zone capture — success toast top-center ======================= */
+#capture-toast {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  padding: 8px 20px 10px;
+  background: linear-gradient(180deg, rgba(20, 60, 40, 0.96), rgba(10, 30, 20, 0.96));
+  border: 1px solid rgba(120, 255, 170, 0.7);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(80, 220, 140, 0.3);
+  text-align: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms ease-out, transform 280ms ease-out;
+}
+#capture-toast.hidden { display: none; }
+#capture-toast.promo-in {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#capture-toast.promo-out {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-20px);
+}
+#capture-toast .cap-toast-top {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #aaffcc;
+  text-transform: uppercase;
+  margin-bottom: 1px;
+}
+#capture-toast .cap-toast-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #e8ffef;
+  letter-spacing: 0.6px;
+  text-shadow: 0 0 8px rgba(100, 255, 160, 0.5);
+}
+#capture-toast .cap-toast-sub {
+  font-size: 11px;
+  color: #a0c8b0;
+  letter-spacing: 0.4px;
+  margin-top: 2px;
+}
+
+/* Capture kill-feed badge recolor */
+.kf-badge.kf-cap {
+  color: #c7ffde;
+  background: rgba(60, 160, 100, 0.45);
+  border-color: rgba(130, 255, 190, 0.5);
+}

@@ -87,6 +87,42 @@ export class HUD {
     this._promoTimer    = null;
     this._lastRoundSummary = null;
 
+    // Zone-capture HUD: in-progress indicator (bottom-center, driven by
+    // ZONE_CAPTURE_PROGRESS / ZONE_CAPTURE_ENDED) and a top-center toast
+    // that fires on every zone_captured broadcast (yours or anyone's).
+    this.captureIndicator = document.getElementById('capture-indicator');
+    this.captureZoneName  = document.getElementById('cap-zone-name');
+    this.captureBarFill   = document.getElementById('cap-bar-fill');
+    this.captureElapsed   = document.getElementById('cap-elapsed');
+    this.captureToast     = document.getElementById('capture-toast');
+    this._captureToastTimer = null;
+
+    events.subscribe(GameEvent.ZONE_CAPTURE_PROGRESS, ({ label, elapsed, progress }) => {
+      if (!this.captureIndicator) return;
+      this.captureIndicator.classList.remove('hidden');
+      this.captureZoneName.textContent = label || 'Unknown';
+      this.captureBarFill.style.width = `${Math.round(progress * 100)}%`;
+      this.captureElapsed.textContent = elapsed.toFixed(1);
+    });
+    events.subscribe(GameEvent.ZONE_CAPTURE_ENDED, () => {
+      if (this.captureIndicator) this.captureIndicator.classList.add('hidden');
+    });
+    events.subscribe(GameEvent.NET_ZONE_CAPTURED, ({ capturedBy, name, zoneIndex }) => {
+      // Hide the in-progress bar if this was our zone (server just
+      // confirmed what we optimistically locked in).
+      if (this.captureIndicator) this.captureIndicator.classList.add('hidden');
+      // Kill-feed line goes to everyone so other players see the capture.
+      const capName = name || (capturedBy === this._myId ? 'You' : this._resolveName(capturedBy));
+      const mine = capturedBy === this._myId;
+      this._addKillFeedEntry(
+        `<span class="kf-badge kf-cap">ZONE</span> ${escapeHtml(capName)} captured a spawn zone`,
+        mine,
+        { asHtml: true },
+      );
+      // Brief toast for the capturer only — the +500 XP is worth celebrating.
+      if (mine) this._showCaptureToast(zoneIndex);
+    });
+
     // Listen for the server's round summary (delivered at endRound to each
     // player individually) — use it to populate the XP panel in the
     // round-end overlay.
@@ -425,6 +461,25 @@ export class HUD {
   // already refreshed by the time this fires, so any kill feed / round-
   // end leaderboard that renders afterward picks up the new title without
   // needing a signal from here.
+  // Briefly flash the "Zone captured +500 XP" banner. Uses the same
+  // slide-in/out animation pattern as the promotion toast for consistency.
+  _showCaptureToast() {
+    if (!this.captureToast) return;
+    const titleEl = this.captureToast.querySelector('.cap-toast-title');
+    const subEl   = this.captureToast.querySelector('.cap-toast-sub');
+    if (titleEl) titleEl.textContent = '+500 XP';
+    if (subEl)   subEl.textContent   = 'Spawn zone neutralized.';
+    this.captureToast.classList.remove('hidden', 'promo-out');
+    void this.captureToast.offsetWidth;
+    this.captureToast.classList.add('promo-in');
+    if (this._captureToastTimer) clearTimeout(this._captureToastTimer);
+    this._captureToastTimer = setTimeout(() => {
+      this.captureToast.classList.remove('promo-in');
+      this.captureToast.classList.add('promo-out');
+      setTimeout(() => this.captureToast?.classList.add('hidden'), 400);
+    }, 2600);
+  }
+
   _showPromotionToast(level, title) {
     if (!this.promoToast) return;
     const titleEl = this.promoToast.querySelector('.promo-title');

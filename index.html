@@ -136,6 +136,18 @@
       <div class="promo-title"></div>
       <div class="promo-sub">You've been promoted.</div>
     </div>
+
+    <div id="capture-indicator" class="hidden" aria-live="polite">
+      <div class="cap-label">Capturing <span id="cap-zone-name"></span></div>
+      <div class="cap-bar"><div id="cap-bar-fill" class="cap-bar-fill"></div></div>
+      <div class="cap-sub"><span id="cap-elapsed">0</span> / 10s</div>
+    </div>
+
+    <div id="capture-toast" class="hidden" aria-live="polite">
+      <div class="cap-toast-top">Zone captured</div>
+      <div class="cap-toast-title"></div>
+      <div class="cap-toast-sub"></div>
+    </div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

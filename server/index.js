@@ -119,6 +119,16 @@ const round = {
   // in ~100ms and insta-flip to PvP with a fake victory.
   hostilesSeen: false,
 };
+// Zone indices that have been captured this round. Zone capture logic is
+// client-side (each client checks whether the local player has stood inside
+// a zone continuously for CAPTURE_SECONDS); this set is just the
+// server-authoritative memo of "which zones are off-limits for the rest of
+// the round." Broadcast to clients whenever it changes and on first join.
+const capturedZonesThisRound = new Set(); // zone index (number)
+// Who captured which zone this round, so future rejoiners can render the
+// name on the zone marker and the server knows whose career to credit.
+const capturedZoneBy = new Map();         // zoneIndex → playerId
+
 // Aggregated hostile count from connected clients — refreshed by hostile_count.
 const hostilesByPlayer = new Map(); // pid → count
 // Timestamp when each player's local count first dropped to zero (and has
@@ -204,6 +214,7 @@ function rankPayload(row) {
     best_round_kills: row.best_round_kills ?? 0,
     best_round_souls: row.best_round_souls ?? 0,
     time_played_sec:  row.time_played_sec  ?? 0,
+    zones_captured:   row.zones_captured   ?? 0,
   };
 }
 
@@ -257,6 +268,8 @@ function goIdle() {
   roundKillsByPid.clear();
   roundSoulsByPid.clear();
   participantsThisRnd.clear();
+  capturedZonesThisRound.clear();
+  capturedZoneBy.clear();
   console.log('[round] idle — waiting for players');
 }
 
@@ -277,6 +290,8 @@ function startNewRound() {
   roundKillsByPid.clear();
   roundSoulsByPid.clear();
   participantsThisRnd.clear();
+  capturedZonesThisRound.clear();
+  capturedZoneBy.clear();
 }
 
 // Called RESTART_DELAY_MS after endRound. Wipes per-round progression
@@ -583,6 +598,12 @@ io.on('connection', (socket) => {
       player: serializePlayer(playerState),
       worldPlayers: allPlayers.filter(p => p.id !== playerId),
       career: rankPayload(careerRow),
+      // Captured zones this round so mid-round joiners render the green
+      // markers and their BattleDirector skips those zones immediately.
+      capturedZones: [...capturedZonesThisRound].map(i => ({
+        zoneIndex: i,
+        capturedBy: capturedZoneBy.get(i) ?? null,
+      })),
     };
 
     if (existing) {
@@ -680,6 +701,46 @@ io.on('connection', (socket) => {
     roundSoulsByPid.set(playerId, (roundSoulsByPid.get(playerId) ?? 0) + b);
     participantsThisRnd.add(playerId);
     checkPromotion(playerId, p.name);
+  });
+
+  // Zone capture — client detected the local player stood inside a zone for
+  // the capture threshold. The client is the source of truth for the timer
+  // (per product spec), but the server validates zone existence, prior
+  // capture, and a coarse distance sanity check against the last reported
+  // position so a hacked client can't claim zones they've never been near.
+  socket.on('zone_capture', ({ playerId, zoneIndex }) => {
+    const p = players.get(playerId);
+    if (!p || p.socketId !== socket.id) return;
+    if (p.hp <= 0) return;                          // dead players can't capture
+    if (round.phase !== 'pve' && round.phase !== 'pvp') return;
+    const idx = Number(zoneIndex);
+    if (!Number.isInteger(idx)) return;
+    const zone = battleConfig.hostileSpawnZones?.[idx];
+    if (!zone) return;                              // bad index
+    if (capturedZonesThisRound.has(idx)) return;    // first-to-capture wins
+
+    // Coarse distance check against the player's last server-known position.
+    // Generous tolerance (+5u) absorbs a bit of client-server fuzz without
+    // letting a client fake captures from across the map.
+    const dx = p.pos.x - zone.center[0];
+    const dz = p.pos.z - zone.center[2];
+    const dist = Math.hypot(dx, dz);
+    if (dist > zone.radius + 5) return;
+
+    capturedZonesThisRound.add(idx);
+    capturedZoneBy.set(idx, playerId);
+
+    db.incZoneCaptured.run(Date.now(), playerId);
+    participantsThisRnd.add(playerId);
+    checkPromotion(playerId, p.name);
+
+    io.to(ROOM).emit('zone_captured', {
+      zoneIndex: idx,
+      capturedBy: playerId,
+      name: p.name,
+      t: Date.now(),
+    });
+    console.log(`[capture] ${p.name} captured zone #${idx} "${zone.label}"`);
   });
 
   socket.on('upgrade_purchase', ({ playerId, key }) => {

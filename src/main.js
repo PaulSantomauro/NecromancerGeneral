@@ -10,6 +10,7 @@ import { BattleDirector } from './systems/BattleDirector.js';
 import { PlayerStats } from './systems/PlayerStats.js';
 import { ProgressionSystem } from './systems/ProgressionSystem.js';
 import { CareerSystem } from './systems/CareerSystem.js';
+import { ZoneCaptureSystem } from './systems/ZoneCaptureSystem.js';
 import { NetworkSystem } from './systems/NetworkSystem.js';
 import { Projectile } from './entities/Projectile.js';
 import ammoConfig from './config/ammo.json';
@@ -235,7 +236,10 @@ const battleDirector = new BattleDirector({
 
 const progression = new ProgressionSystem({ playerStats });
 const career = new CareerSystem();
+// Network-dependent; wired after `net` is constructed further below.
+const zoneCapture = new ZoneCaptureSystem({ net: null, player });
 battleDirector.progression = progression;
+battleDirector.zoneCapture = zoneCapture;
 player.progression = progression;
 
 const hud = new HUD({ playerStats, progression, roundState, career });
@@ -397,6 +401,16 @@ function onServerReady(data) {
   if (data.worldPlayers) {
     for (const wp of data.worldPlayers) career.noteRankFromPlayer(wp.id, wp.rank);
   }
+
+  // Zones the server already considers captured this round — mid-round
+  // joiners inherit the green markers + the "don't spawn here" filter
+  // without needing to wait for a fresh zone_captured broadcast.
+  if (data.capturedZones?.length) {
+    zoneCapture.ingestInitial(data.capturedZones);
+    for (const entry of data.capturedZones) {
+      battlefield.setZoneCaptured(entry.zoneIndex);
+    }
+  }
   if (data.player?.rank) career.noteRankFromPlayer(myId, data.player.rank);
 
   reconcileRemotes(data);
@@ -480,6 +494,10 @@ const splash = new SplashScreen(({ id, name }) => {
     onWelcome: handshake,
     onRestore: handshake,
   });
+  // Late-bind the network handle on ZoneCaptureSystem now that the socket
+  // exists — the system was constructed earlier with a null reference so
+  // it'd be available to BattleDirector at construction time.
+  zoneCapture.net = net;
 }, urlParams);
 
 // ── Input → network forwarding ─────────────────────────────────────────────
@@ -606,6 +624,26 @@ events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {
     }
   }
   if (killedBy && killedBy === myId) localKills++;
+});
+
+// Zone capture bridges: server-authoritative "captured" signal and
+// client-local progress/end signals are both routed to the Battlefield
+// so the ring visuals stay in sync with both states.
+events.subscribe(GameEvent.NET_ZONE_CAPTURED, ({ zoneIndex }) => {
+  battlefield.setZoneCaptured(zoneIndex);
+});
+events.subscribe(GameEvent.ZONE_CAPTURE_PROGRESS, ({ zoneIndex, progress }) => {
+  battlefield.setZoneCaptureProgress(zoneIndex, progress);
+});
+events.subscribe(GameEvent.ZONE_CAPTURE_ENDED, ({ zoneIndex }) => {
+  if (zoneIndex === -1) {
+    // Player stepped out of all zones or died — clear every lingering glow.
+    for (let i = 0; i < (battleConfig.hostileSpawnZones?.length ?? 0); i++) {
+      battlefield.clearZoneCaptureProgress(i);
+    }
+  } else {
+    battlefield.clearZoneCaptureProgress(zoneIndex);
+  }
 });
 
 events.subscribe(GameEvent.NET_PLAYER_JOINED, ({ player: p }) => {
@@ -802,6 +840,11 @@ function onRoundRestarted() {
   }
   skeletons.length = 0;
   remoteAllies.clear();
+
+  // Fresh round = every zone is back in play. Reset client capture state
+  // and visually restore the red markers before BattleDirector reseeds.
+  zoneCapture.resetForNewRound();
+  battlefield.resetAllZones();
 
   for (const p of projectiles) {
     if (p.mesh) scene.remove(p.mesh);
@@ -1045,6 +1088,7 @@ function animate() {
   }
 
   battlefield.update(dt, player.position);
+  zoneCapture.update(dt);
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];

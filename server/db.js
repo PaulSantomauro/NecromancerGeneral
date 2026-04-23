@@ -44,11 +44,21 @@ db.exec(`
     best_round_kills  INTEGER DEFAULT 0,
     best_round_souls  INTEGER DEFAULT 0,
     time_played_sec   INTEGER DEFAULT 0,
+    zones_captured    INTEGER DEFAULT 0,
     first_played      INTEGER,
     last_played       INTEGER,
     FOREIGN KEY (player_id) REFERENCES players(id)
   );
 `);
+
+// Migrate older DBs that were created before the `zones_captured` column
+// existed. SQLite can't ADD COLUMN IF NOT EXISTS — swallow the duplicate-
+// column error on subsequent boots.
+try {
+  db.exec('ALTER TABLE career_stats ADD COLUMN zones_captured INTEGER DEFAULT 0');
+} catch (e) {
+  if (!String(e.message).includes('duplicate column')) throw e;
+}
 
 // Migrate older DBs that were created before the `type` column existed.
 // SQLite doesn't support `ADD COLUMN IF NOT EXISTS`, so swallow the "duplicate
@@ -168,6 +178,9 @@ export const commitRoundPlayed = db.prepare(`
 `);
 export const addTimePlayed = db.prepare(
   'UPDATE career_stats SET time_played_sec = time_played_sec + ?, last_played = ? WHERE player_id = ?'
+);
+export const incZoneCaptured = db.prepare(
+  'UPDATE career_stats SET zones_captured = zones_captured + 1, last_played = ? WHERE player_id = ?'
 );
 
 export default db;

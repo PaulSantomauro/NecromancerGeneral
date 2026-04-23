@@ -50,6 +50,15 @@ export class NetworkSystem {
     this.socket.on('rejoin_denied',       (d) => events.emit(GameEvent.NET_ROUND_ENDED, { ...d, rejoinDenied: true }));
     this.socket.on('career_promoted',      (d) => events.emit(GameEvent.NET_CAREER_PROMOTED, d));
     this.socket.on('career_round_summary', (d) => events.emit(GameEvent.NET_CAREER_SUMMARY, d));
+    this.socket.on('zone_captured',        (d) => events.emit(GameEvent.NET_ZONE_CAPTURED, d));
+  }
+
+  sendZoneCapture(zoneIndex) {
+    if (!this.connected) return;
+    this.socket.emit('zone_capture', {
+      playerId: this.playerId,
+      zoneIndex,
+    });
   }
 
   // Splash-screen helpers: these fire before `join`, on a separate socket

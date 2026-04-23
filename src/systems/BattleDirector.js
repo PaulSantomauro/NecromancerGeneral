@@ -28,7 +28,7 @@ function randomPointInZone(zone) {
 }
 
 export class BattleDirector {
-  constructor({ config, skeletons, player, spawnSkeleton, progression = null, roundState = null }) {
+  constructor({ config, skeletons, player, spawnSkeleton, progression = null, roundState = null, zoneCapture = null }) {
     this.config = config;
     this.skeletons = skeletons;
     this.player = player;
@@ -38,6 +38,11 @@ export class BattleDirector {
     // Used to gate spawn zones by the current fog radius and to freeze spawning
     // once PvE ends.
     this.roundState = roundState;
+    // ZoneCaptureSystem reference — used to filter captured zones out of
+    // the spawn pool. Each client maintains its own capturedZones set but
+    // keeps it in sync with everyone else's via NET_ZONE_CAPTURED broadcasts,
+    // so two players watching the same zone see it stop spawning together.
+    this.zoneCapture = zoneCapture;
 
     this.maxHostiles = config.maxHostiles;
     this.maxAllies = config.maxAllies;
@@ -47,20 +52,26 @@ export class BattleDirector {
     this._allyReinforceTimer = config.allyReinforcementInterval;
   }
 
-  // Returns zones whose outer edge fits inside the current fog radius. A zone
-  // straddling the fog boundary is excluded so enemies don't spawn in the
-  // lethal ring. Falls back to the full list if roundState isn't connected yet.
+  // Returns zones whose outer edge fits inside the current fog radius AND
+  // that have not been captured. A zone straddling the fog boundary is
+  // excluded so enemies don't spawn in the lethal ring; captured zones are
+  // excluded because capturing them is supposed to make the horde stop
+  // coming from that direction for the rest of the round.
   _zonesInsideFog() {
-    if (!this.roundState || typeof this.roundState.fogRadius !== 'number') {
-      return this.config.hostileSpawnZones;
+    const all = this.config.hostileSpawnZones;
+    const R = (this.roundState && typeof this.roundState.fogRadius === 'number')
+      ? this.roundState.fogRadius
+      : Infinity;
+    const zc = this.zoneCapture;
+    const result = [];
+    for (let i = 0; i < all.length; i++) {
+      if (zc && zc.isCaptured(i)) continue;
+      const z = all[i];
+      const distFromOrigin = Math.hypot(z.center[0], z.center[2]);
+      if (distFromOrigin + z.radius > R) continue;
+      result.push(z);
     }
-    const R = this.roundState.fogRadius;
-    return this.config.hostileSpawnZones.filter(z => {
-      const dx = z.center[0];
-      const dz = z.center[2];
-      const distFromOrigin = Math.hypot(dx, dz);
-      return distFromOrigin + z.radius <= R;
-    });
+    return result;
   }
 
   _allyOptions() {
@@ -71,8 +82,19 @@ export class BattleDirector {
   }
 
   seed() {
+    // Filter the initial-spawn pool the same way `_zonesInsideFog` does so
+    // a mid-round joiner's fresh BattleDirector doesn't seed hostiles into
+    // zones other players have already captured.
+    const zc = this.zoneCapture;
+    const allZones = this.config.hostileSpawnZones;
+    const activeZones = [];
+    for (let i = 0; i < allZones.length; i++) {
+      if (zc && zc.isCaptured(i)) continue;
+      activeZones.push(allZones[i]);
+    }
+    const pool = activeZones.length > 0 ? activeZones : allZones;
     for (let i = 0; i < this.config.initialHostileCount; i++) {
-      const zone = this.config.hostileSpawnZones[i % this.config.hostileSpawnZones.length];
+      const zone = pool[i % pool.length];
       this.spawnSkeleton(randomPointInZone(zone), Faction.HOSTILE, { type: pickMonsterType() });
     }
     for (let i = 0; i < this.config.initialAlliedCount; i++) {
