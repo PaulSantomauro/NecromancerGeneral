@@ -487,7 +487,57 @@ export class Battlefield {
       pulse.position.set(cx, groundY + 0.03, cz);
       scene.add(pulse);
 
-      this._spawnRings.push({ ring, disc, pulse, mat: ringMat, pulseMat, cx, cz, r });
+      this._spawnRings.push({
+        ring, disc, pulse, mat: ringMat, pulseMat, discMat, cx, cz, r,
+        captured: false,
+        captureProgress: 0,
+      });
+    }
+  }
+
+  // Toggle a zone into its captured state — static safe-color ring and a
+  // still pulse so the eye reads "this ain't spawning anymore." Idempotent.
+  setZoneCaptured(zoneIndex) {
+    const r = this._spawnRings?.[zoneIndex];
+    if (!r || r.captured) return;
+    r.captured = true;
+    r.captureProgress = 1;
+    r.mat.color.setHex(0x33cc88);       // ring — safe green
+    r.pulseMat.color.setHex(0x66ff99);   // inner pulse
+    r.discMat.color.setHex(0x114422);    // disc
+    r.mat.opacity = 0.5;
+    r.pulseMat.opacity = 0.35;
+    r.discMat.opacity = 0.15;
+  }
+
+  // Track how close the local player is to capturing a zone. Drives a
+  // brighter, faster pulse so the zone visibly "heats up" as the timer
+  // advances. No effect on already-captured zones.
+  setZoneCaptureProgress(zoneIndex, progress) {
+    const r = this._spawnRings?.[zoneIndex];
+    if (!r || r.captured) return;
+    r.captureProgress = Math.max(0, Math.min(1, progress));
+  }
+
+  // Clear any in-flight capture progress on a zone (player stepped out
+  // before the threshold). Captured zones stay captured.
+  clearZoneCaptureProgress(zoneIndex) {
+    const r = this._spawnRings?.[zoneIndex];
+    if (!r || r.captured) return;
+    r.captureProgress = 0;
+  }
+
+  // Reset every zone back to the uncaptured red aesthetic. Called on
+  // round restart when the server's capturedZones set is wiped.
+  resetAllZones() {
+    if (!this._spawnRings) return;
+    for (const r of this._spawnRings) {
+      r.captured = false;
+      r.captureProgress = 0;
+      r.mat.color.setHex(0xcc4422);
+      r.pulseMat.color.setHex(0xff6633);
+      r.discMat.color.setHex(0x881100);
+      r.discMat.opacity = 0.08;
     }
   }
 
@@ -740,11 +790,21 @@ export class Battlefield {
     pos.needsUpdate = true;
 
     this._spawnRingTime += dt;
-    const pulse = (Math.sin(this._spawnRingTime * 2.0) + 1) * 0.5;
     for (const ring of this._spawnRings) {
-      ring.mat.opacity = 0.2 + pulse * 0.2;
-      ring.pulseMat.opacity = 0.15 + pulse * 0.25;
-      const s = 0.8 + pulse * 0.4;
+      if (ring.captured) {
+        // Static safe colors set in setZoneCaptured(); just hold the pulse
+        // mesh at a steady scale so it doesn't twitch.
+        ring.pulse.scale.set(1, 1, 1);
+        continue;
+      }
+      // Capture in progress: bias frequency + amplitude up proportional to
+      // progress so the zone "heats up" under a capturing player.
+      const heat = ring.captureProgress;
+      const freq = 2.0 + heat * 4.0;
+      const pulse = (Math.sin(this._spawnRingTime * freq) + 1) * 0.5;
+      ring.mat.opacity      = (0.2 + pulse * 0.2) * (1 + heat * 0.8);
+      ring.pulseMat.opacity = (0.15 + pulse * 0.25) * (1 + heat * 0.8);
+      const s = 0.8 + pulse * (0.4 + heat * 0.3);
       ring.pulse.scale.set(s, s, 1);
     }
 
