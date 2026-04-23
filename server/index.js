@@ -4,7 +4,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 import * as db from './db.js';
-import { xpFor, levelFor, titleFor } from '../src/config/ranks.js';
+import {
+  xpFor, levelFor, titleFor,
+  XP_PER_ROUND_PLAYED, XP_PER_PVE_KILL, XP_PER_PVP_KILL,
+  XP_PER_ROUND_WON, XP_PER_ZONE_CAPTURE,
+} from '../src/config/ranks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ammoConfig = JSON.parse(
@@ -143,6 +147,13 @@ const deadThisRound = new Set();
 // their kills and get the round counted). Flushed on goIdle / startNewRound.
 const roundKillsByPid     = new Map(); // pid → PvE kills this round
 const roundSoulsByPid     = new Map(); // pid → souls earned this round
+// XP accumulated this round by each player. The per-action DB increments
+// (incPveKill, incPvpKill, incZoneCaptured) all happen BEFORE endRound
+// runs, so a naive before/after xpFor() snapshot at endRound would miss
+// everything that was already committed mid-round and only show the
+// +rounds_played/won component. Keep a live XP tally that endRound can
+// report directly.
+const roundXpByPid        = new Map(); // pid → XP earned this round
 const participantsThisRnd = new Set(); // pid of anyone who was in the round
 // Session start per connected socket; consumed on disconnect to credit
 // time_played_sec on the career row.
@@ -218,6 +229,16 @@ function rankPayload(row) {
   };
 }
 
+// Credit XP toward the current round's tally for a player. Every per-
+// action career_stats increment should also call this with the same
+// amount the shared ranks.xpFor() formula will yield when the row is
+// read later — keeping it matched is why the XP constants live in
+// ranks.js and are imported on both sides.
+function awardRoundXp(playerId, amount) {
+  if (!playerId || !amount) return;
+  roundXpByPid.set(playerId, (roundXpByPid.get(playerId) ?? 0) + amount);
+}
+
 // After any DB increment that could have crossed a rank threshold, call
 // this with the affected player's id. It re-reads the row, recomputes the
 // level, compares to `careerLevelByPid`, and emits `career_promoted` to
@@ -267,6 +288,7 @@ function goIdle() {
   deadThisRound.clear();
   roundKillsByPid.clear();
   roundSoulsByPid.clear();
+  roundXpByPid.clear();
   participantsThisRnd.clear();
   capturedZonesThisRound.clear();
   capturedZoneBy.clear();
@@ -289,6 +311,7 @@ function startNewRound() {
   deadThisRound.clear();
   roundKillsByPid.clear();
   roundSoulsByPid.clear();
+  roundXpByPid.clear();
   participantsThisRnd.clear();
   capturedZonesThisRound.clear();
   capturedZoneBy.clear();
@@ -369,14 +392,18 @@ function endRound(winnerId) {
     const isWinner = (pid === winnerId) ? 1 : 0;
     const kills = roundKillsByPid.get(pid) ?? 0;
     const souls = roundSoulsByPid.get(pid) ?? 0;
-    // Snapshot XP before committing so the client doesn't have to guess
-    // the delta from per-stat formulas — we ship the exact XP gained.
-    const before = db.getCareer.get(pid);
-    const beforeXp = xpFor(before);
     db.commitRoundPlayed.run(isWinner, kills, souls, now, pid);
-    const after = db.getCareer.get(pid);
-    const xpGained = xpFor(after) - beforeXp;
 
+    // XP gained this round = every per-action increment we tallied live
+    // (PvE kills, PvP kills, zone captures) PLUS the round-level rewards
+    // that only materialize here (played + optional win bonus). Matches
+    // the shared xpFor() formula exactly.
+    const xpGained =
+      (roundXpByPid.get(pid) ?? 0)
+      + XP_PER_ROUND_PLAYED
+      + (isWinner ? XP_PER_ROUND_WON : 0);
+
+    const after = db.getCareer.get(pid);
     const name = players.get(pid)?.name ?? null;
     checkPromotion(pid, name);
     const p = players.get(pid);
@@ -695,10 +722,13 @@ io.on('connection', (socket) => {
     io.to(ROOM).emit('souls_granted', { playerId, amount: b, total: p.souls });
 
     // Career stats: one more PvE kill, credit bounty toward lifetime souls,
-    // tally round-kills for the best_round_kills MAX at endRound.
+    // tally round-kills for the best_round_kills MAX at endRound. Also
+    // credit the matching XP so the round-summary "+N XP" panel lines up
+    // with what the shared formula would compute.
     db.incPveKill.run(b, Date.now(), playerId);
     roundKillsByPid.set(playerId, (roundKillsByPid.get(playerId) ?? 0) + 1);
     roundSoulsByPid.set(playerId, (roundSoulsByPid.get(playerId) ?? 0) + b);
+    awardRoundXp(playerId, XP_PER_PVE_KILL);
     participantsThisRnd.add(playerId);
     checkPromotion(playerId, p.name);
   });
@@ -731,6 +761,7 @@ io.on('connection', (socket) => {
     capturedZoneBy.set(idx, playerId);
 
     db.incZoneCaptured.run(Date.now(), playerId);
+    awardRoundXp(playerId, XP_PER_ZONE_CAPTURE);
     participantsThisRnd.add(playerId);
     checkPromotion(playerId, p.name);
 
@@ -1096,6 +1127,7 @@ function killGeneral(target, killerId) {
       // UPDATE for write efficiency — see incPvpKill in db.js).
       db.incPvpKill.run(3, now, killerId);
       roundSoulsByPid.set(killerId, (roundSoulsByPid.get(killerId) ?? 0) + 3);
+      awardRoundXp(killerId, XP_PER_PVP_KILL);
       participantsThisRnd.add(killerId);
       checkPromotion(killerId, shooter.name);
     }
