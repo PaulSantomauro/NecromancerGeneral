@@ -491,6 +491,17 @@ export class Battlefield {
         ring, disc, pulse, mat: ringMat, pulseMat, discMat, cx, cz, r,
         captured: false,
         captureProgress: 0,
+        // Reference hues for the capture progress lerp. Every frame the
+        // update loop interpolates ring/pulse/disc colors from the red
+        // "from" to the green "to" using captureProgress as t. Keeping
+        // Color instances per ring avoids thrashing the GC with new
+        // THREE.Color() allocations each tick.
+        _colorFromRing:  new THREE.Color(0xcc4422),
+        _colorToRing:    new THREE.Color(0x33cc88),
+        _colorFromPulse: new THREE.Color(0xff6633),
+        _colorToPulse:   new THREE.Color(0x66ff99),
+        _colorFromDisc:  new THREE.Color(0x881100),
+        _colorToDisc:    new THREE.Color(0x114422),
       });
     }
   }
@@ -790,6 +801,7 @@ export class Battlefield {
     pos.needsUpdate = true;
 
     this._spawnRingTime += dt;
+    const pulse = (Math.sin(this._spawnRingTime * 2.0) + 1) * 0.5;
     for (const ring of this._spawnRings) {
       if (ring.captured) {
         // Static safe colors set in setZoneCaptured(); just hold the pulse
@@ -797,14 +809,17 @@ export class Battlefield {
         ring.pulse.scale.set(1, 1, 1);
         continue;
       }
-      // Capture in progress: bias frequency + amplitude up proportional to
-      // progress so the zone "heats up" under a capturing player.
-      const heat = ring.captureProgress;
-      const freq = 2.0 + heat * 4.0;
-      const pulse = (Math.sin(this._spawnRingTime * freq) + 1) * 0.5;
-      ring.mat.opacity      = (0.2 + pulse * 0.2) * (1 + heat * 0.8);
-      ring.pulseMat.opacity = (0.15 + pulse * 0.25) * (1 + heat * 0.8);
-      const s = 0.8 + pulse * (0.4 + heat * 0.3);
+      // Capture in progress: lerp hue red → green proportional to
+      // progress. Frequency, amplitude, and scale stay at the normal
+      // uncaptured baseline so the ring doesn't shake or jitter while
+      // being captured — only its color shifts.
+      const t = ring.captureProgress;
+      ring.mat.color.lerpColors(ring._colorFromRing,  ring._colorToRing,  t);
+      ring.pulseMat.color.lerpColors(ring._colorFromPulse, ring._colorToPulse, t);
+      ring.discMat.color.lerpColors(ring._colorFromDisc,  ring._colorToDisc,  t);
+      ring.mat.opacity = 0.2 + pulse * 0.2;
+      ring.pulseMat.opacity = 0.15 + pulse * 0.25;
+      const s = 0.8 + pulse * 0.4;
       ring.pulse.scale.set(s, s, 1);
     }
 

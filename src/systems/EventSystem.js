@@ -35,6 +35,7 @@ export const GameEvent = Object.freeze({
   NET_ZONE_CAPTURED:      'net_zone_captured',
   ZONE_CAPTURE_PROGRESS:  'zone_capture_progress',
   ZONE_CAPTURE_ENDED:     'zone_capture_ended',
+  ALLY_HIT_GENERAL:       'ally_hit_general',
   DAMAGE_INDICATOR:       'damage_indicator',
   PLAYER_KILL:            'player_kill',
   FIRE_FAILED:            'fire_failed',

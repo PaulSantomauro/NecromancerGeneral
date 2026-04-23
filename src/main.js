@@ -626,6 +626,17 @@ events.subscribe(GameEvent.NET_GENERAL_DIED, ({ playerId, killedBy }) => {
   if (killedBy && killedBy === myId) localKills++;
 });
 
+// Ally → RemoteGeneral melee damage. RemoteGeneral.takeDamage emits this
+// event (CombatSystem calls it when a local ally lands a swing). Only
+// the client that owns the attacking ally forwards the hit to the
+// server; bystander clients see the same event fire but ignore it to
+// avoid duplicate damage reports from every window watching the fight.
+events.subscribe(GameEvent.ALLY_HIT_GENERAL, ({ targetId, attacker, dmg }) => {
+  if (!net || !attacker?.ownerId) return;
+  if (attacker.ownerId !== myId) return;
+  net.sendAllyHitGeneral(targetId, dmg);
+});
+
 // Zone capture bridges: server-authoritative "captured" signal and
 // client-local progress/end signals are both routed to the Battlefield
 // so the ring visuals stay in sync with both states.
@@ -938,15 +949,33 @@ function animate() {
 
   for (const p of projectiles) p.update(dt);
 
-  // Build targeting lists for AI.
-  // ctx.hostiles = what allied AI attacks (hostiles + non-friendly allies = remote/orphaned)
-  // ctx.allies   = what hostile AI attacks (all ALLIED skeletons)
+  // Build targeting lists for AI. Phase-aware so my army doesn't turn on
+  // allied players during PvE (when everyone's on the same team fighting
+  // the horde) and properly goes after rival generals + their minions
+  // once PvP starts.
+  //
+  //   PvE  → my allies target HOSTILE skeletons only
+  //   PvP  → my allies target HOSTILE skeletons + rival players' allied
+  //          skeletons (s.friendly === false) + every remote general
+  //
+  // Hostiles always target any ALLIED skeleton — unchanged from before.
+  const isPvp = roundState.phase === 'pvp';
   const alliedTargets = []; // for my allies to attack
   const hostileTargets = []; // for hostiles to attack
   for (const s of skeletons) {
     if (!s.alive) continue;
-    if (!s.friendly) alliedTargets.push(s); // hostiles + remote allies + orphaned
-    if (s.faction === Faction.ALLIED) hostileTargets.push(s); // any ally is fair game for hostiles
+    if (s.faction === Faction.HOSTILE) {
+      alliedTargets.push(s);
+    } else if (isPvp && !s.friendly) {
+      // Only during PvP do other players' allies become valid targets.
+      alliedTargets.push(s);
+    }
+    if (s.faction === Faction.ALLIED) hostileTargets.push(s);
+  }
+  if (isPvp) {
+    for (const rg of remoteGenerals.values()) {
+      if (rg.alive) alliedTargets.push(rg);
+    }
   }
   const ctx = { player, hostiles: alliedTargets, allies: hostileTargets, attackRange: 2.5 };
 

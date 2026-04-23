@@ -30,6 +30,12 @@ export const MAX_LEVEL = RANKS[RANKS.length - 1].level;
 //   +250 per PvP kill (generals are rare and hard)
 //   +100 per round won (stacks with rounds_played)
 //   +500 per spawn zone captured (denying a big chunk of the map is valuable)
+export const XP_PER_ROUND_PLAYED = 100;
+export const XP_PER_PVE_KILL     = 10;
+export const XP_PER_PVP_KILL     = 250;
+export const XP_PER_ROUND_WON    = 100;
+export const XP_PER_ZONE_CAPTURE = 500;
+
 export function xpFor(stats) {
   if (!stats) return 0;
   const rp  = stats.rounds_played  ?? 0;
@@ -37,7 +43,13 @@ export function xpFor(stats) {
   const pvp = stats.pvp_kills      ?? 0;
   const rw  = stats.rounds_won     ?? 0;
   const zc  = stats.zones_captured ?? 0;
-  return rp * 100 + pve * 10 + pvp * 250 + rw * 100 + zc * 500;
+  return (
+    rp  * XP_PER_ROUND_PLAYED
+    + pve * XP_PER_PVE_KILL
+    + pvp * XP_PER_PVP_KILL
+    + rw  * XP_PER_ROUND_WON
+    + zc  * XP_PER_ZONE_CAPTURE
+  );
 }
 
 export function levelFor(xp) {
