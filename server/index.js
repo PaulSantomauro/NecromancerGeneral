@@ -27,15 +27,41 @@ const MUZZLE_OFFSET = 1.2;
 const WORLD_SIZE = battleConfig.worldSize ?? 200;
 const W_HALF = WORLD_SIZE / 2;
 const EDGE_BUFFER = 0.5;
-// Safe spawn radius — generous but well inside the initial fog radius so
-// no player is dropped into the lethal ring.
-const SPAWN_RADIUS = Math.min(100, (FOG_START ?? 95) * 0.55);
+// Spawn ring — players land in a band that lines up with the outer
+// hostile-zone circle so they start inside the active combat area
+// (rather than a dead patch near origin). Ring is well inside FOG_START
+// so nobody spawns in fog, and a small rejection-sampling pass keeps
+// spawns from landing on top of a hostile spawn hill.
+const SPAWN_RING_MIN = 110;
+const SPAWN_RING_MAX = 135;
+const SPAWN_ZONE_BUFFER = 4;   // extra clearance from any hostile zone edge
 
 function randomSpawn() {
-  const r = Math.sqrt(Math.random()) * SPAWN_RADIUS;
+  const zones = battleConfig.hostileSpawnZones ?? [];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const r = SPAWN_RING_MIN + Math.random() * (SPAWN_RING_MAX - SPAWN_RING_MIN);
+    const a = Math.random() * Math.PI * 2;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    let insideZone = false;
+    for (const zone of zones) {
+      const dx = x - zone.center[0];
+      const dz = z - zone.center[2];
+      const buffer = zone.radius + SPAWN_ZONE_BUFFER;
+      if (dx * dx + dz * dz < buffer * buffer) {
+        insideZone = true;
+        break;
+      }
+    }
+    if (!insideZone) return { x, z };
+  }
+  // Fall back to a plain ring point if every attempt collided — won't
+  // happen with the current 18-zone layout but keeps the function total.
+  const r = (SPAWN_RING_MIN + SPAWN_RING_MAX) / 2;
   const a = Math.random() * Math.PI * 2;
   return { x: Math.cos(a) * r, z: Math.sin(a) * r };
 }
+
 function wrapC(v) {
   if (v > W_HALF - EDGE_BUFFER) return W_HALF - EDGE_BUFFER;
   if (v < -W_HALF + EDGE_BUFFER) return -W_HALF + EDGE_BUFFER;
