@@ -159,6 +159,33 @@ scene.add(attackMoveMarker);
 let attackMoveMarkerTimer = 0;
 const ATTACK_MOVE_MARKER_DURATION = 1.6;
 
+// Rally pulse — expanding shockwave at the player's feet every time the
+// army is commanded. Reads as "the necromancer's voice goes out to the
+// horde" and gives the attack-move a source as well as a destination.
+const rallyPulseMat = new THREE.MeshBasicMaterial({
+  color: 0xb966ff,
+  transparent: true,
+  opacity: 0,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+const rallyPulse = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.7, 64), rallyPulseMat);
+rallyPulse.rotation.x = -Math.PI / 2;
+rallyPulse.visible = false;
+scene.add(rallyPulse);
+let rallyPulseTimer = 0;
+const RALLY_PULSE_DURATION = 0.9;
+const RALLY_PULSE_MAX_SCALE = 6.5;
+
+function fireRallyPulse() {
+  rallyPulse.position.set(player.position.x, 0.08, player.position.z);
+  rallyPulse.scale.set(1, 1, 1);
+  rallyPulseMat.opacity = 0.85;
+  rallyPulse.visible = true;
+  rallyPulseTimer = RALLY_PULSE_DURATION;
+}
+
 function issueAttackMove(point) {
   let count = 0;
   for (const sk of skeletons) {
@@ -173,6 +200,7 @@ function issueAttackMove(point) {
     attackMoveMarker.position.set(point.x, point.y + 0.05, point.z);
     attackMoveMarker.visible = true;
     attackMoveMarkerTimer = ATTACK_MOVE_MARKER_DURATION;
+    fireRallyPulse();
   }
 }
 
@@ -447,6 +475,12 @@ function onServerReady(data) {
   // it usually is, in which case forcing the prompt would make survivors
   // click unnecessarily.
   if (!player.controls.isLocked) hud.showLockPrompt(true);
+
+  // Objective banner on fresh join during PvE. PHASE_TRANSITION only
+  // fires on phase flips (ended→pve covers round restart), so the very
+  // first welcome — when _lastPhase is still null — needs this explicit
+  // nudge to arm the 20s banner.
+  if (roundState.phase === 'pve') hud.showObjectiveBanner();
 
   // Build the Vibe Jam portals once, after the player is in the arena.
   // Rebuilding on round restart would duplicate meshes; onRoundRestarted
@@ -1114,6 +1148,20 @@ function animate() {
     const expand = 1 + (1 - k) * 0.5;
     attackMoveRing.scale.set(expand, expand, 1);
     if (attackMoveMarkerTimer <= 0) attackMoveMarker.visible = false;
+  }
+
+  // Rally pulse — shockwave grows from 1× to RALLY_PULSE_MAX_SCALE and
+  // fades linearly over its lifetime. Also tracks the player's position
+  // each frame in case they're sprinting when the pulse kicks off.
+  if (rallyPulseTimer > 0) {
+    rallyPulseTimer -= dt;
+    const k = Math.max(0, rallyPulseTimer / RALLY_PULSE_DURATION);
+    const grow = 1 + (1 - k) * (RALLY_PULSE_MAX_SCALE - 1);
+    rallyPulse.position.x = player.position.x;
+    rallyPulse.position.z = player.position.z;
+    rallyPulse.scale.set(grow, grow, 1);
+    rallyPulseMat.opacity = k * 0.85;
+    if (rallyPulseTimer <= 0) rallyPulse.visible = false;
   }
 
   battlefield.update(dt, player.position);

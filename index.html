@@ -21,6 +21,9 @@
   <meta name="twitter:description" content="Persistent battlefield multiplayer. Summon armies, convert the fallen, last general standing wins as the fog closes in." />
   <meta name="twitter:image" content="https://necromancer.paulsantomauro.com/og.png" />
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@400;600;700;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css" />
   <script async src="https://vibej.am/2026/widget.js"></script>
 </head>
@@ -135,6 +138,21 @@
       <div class="promo-top">Promotion!</div>
       <div class="promo-title"></div>
       <div class="promo-sub">You've been promoted.</div>
+    </div>
+
+    <div id="objective-banner" class="hidden" aria-live="polite">
+      <div class="obj-title">Your Objectives</div>
+      <div class="obj-chain">
+        <span class="obj-step"><span class="obj-glyph">⚔</span> Kill skeletons</span>
+        <span class="obj-arrow">→</span>
+        <span class="obj-step"><span class="obj-glyph">☠</span> Spend souls</span>
+        <span class="obj-arrow">→</span>
+        <span class="obj-step"><span class="obj-glyph">▲</span> Raise army</span>
+        <span class="obj-arrow">→</span>
+        <span class="obj-step"><span class="obj-glyph">⚑</span> Capture red zones</span>
+        <span class="obj-arrow">→</span>
+        <span class="obj-step"><span class="obj-glyph">⌛</span> Survive the fog</span>
+      </div>
     </div>
 
     <div id="capture-indicator" class="hidden" aria-live="polite">

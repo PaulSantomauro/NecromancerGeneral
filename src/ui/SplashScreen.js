@@ -77,7 +77,7 @@ export class SplashScreen {
           <span class="splash-arrow">▸</span>
           <span class="splash-phase phase-end">Victory</span>
         </div>
-        <p class="splash-meta">7-minute rounds · 18 spawn zones · 300u arena</p>
+        <p class="splash-meta">5-minute rounds · 18 spawn zones · 300u arena</p>
 
         <div id="splash-career" class="splash-career hidden" aria-live="polite"></div>
 

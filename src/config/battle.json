@@ -34,7 +34,7 @@
   "round": {
     "fogStartRadius": 142,
     "fogMinRadius": 13,
-    "fogShrinkSeconds": 420,
+    "fogShrinkSeconds": 300,
     "fogDamagePerSec": 3,
     "pveTimeoutSeconds": 60,
     "hostileCountClearTicks": 2
