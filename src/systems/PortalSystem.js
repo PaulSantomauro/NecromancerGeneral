@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // Vibe Jam 2026 webring portals. Two types of ring mesh in the scene:
 //
 //   • Exit portal (always present): walking in redirects to
-//     https://vibejam.cc/portal/2026?... so players can hop to the next
+//     https://vibej.am/portal/2026?... so players can hop to the next
 //     jam entry.
 //   • Entry portal (only when arrived via ?portal=true&ref=...): placed
 //     near spawn; walking back in returns to the referring game.
@@ -13,7 +13,7 @@ import * as THREE from 'three';
 // Both portals have a brief arming delay so an arriving player doesn't
 // immediately re-trigger an exit.
 
-const WEBRING_URL = 'https://vibejam.cc/portal/2026';
+const WEBRING_URL = 'https://vibej.am/portal/2026';
 const TRIGGER_RADIUS = 2.0;
 const ARM_DELAY = 0.5; // seconds before a freshly-built portal can fire
 
