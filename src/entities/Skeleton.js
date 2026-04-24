@@ -96,12 +96,26 @@ function addEyes(group, eyeMat, glowMat, { y, forward = 0.22, spread = 0.1, scal
 }
 
 // Finalize a builder's output: uniform scale, userData contract, return.
-function finalize(group, cfg, bodyMat, eyeMat, glowMat) {
+function finalize(group, cfg, bodyMat, eyeMat, glowMat, bones = null) {
   group.scale.setScalar(cfg.scale);
   group.userData.bodyMaterial = bodyMat;
   group.userData.eyeMaterial = eyeMat;
   group.userData.eyeGlowMaterial = glowMat;
   group.userData.monsterConfig = cfg;
+  // Sparse bone table — keys optional, missing entries skipped by the
+  // animator. Also snapshot each bone's original local position/rotation
+  // so the per-frame bob/swing can superimpose offsets instead of
+  // overwriting the builder's starting pose.
+  if (bones) {
+    for (const key of Object.keys(bones)) {
+      const b = bones[key];
+      if (!b) continue;
+      b.userData.restY = b.position.y;
+      b.userData.restRX = b.rotation.x;
+      b.userData.restRZ = b.rotation.z;
+    }
+    group.userData.bones = bones;
+  }
   return group;
 }
 
@@ -149,7 +163,9 @@ function buildStandardSkeleton(faction, cfg) {
 
   addEyes(group, eyeMat, glowMat, { y: 1.52, forward: 0.22, spread: 0.10 });
 
-  return finalize(group, cfg, bodyMat, eyeMat, glowMat);
+  return finalize(group, cfg, bodyMat, eyeMat, glowMat, {
+    torso: body, skull, armL, armR, legL, legR,
+  });
 }
 
 // Dispatcher — picks a per-type builder; unknown types fall through to the
@@ -214,14 +230,17 @@ function buildRunner(faction, cfg) {
     lower.position.set(sideX, -0.38, 0.02);
     lower.rotation.x = -0.12;
     group.add(upper, knee, lower);
+    return upper; // upper segment is the one the animator will swing
   };
-  mkLeg(-0.10);
-  mkLeg( 0.10);
+  const legL = mkLeg(-0.10);
+  const legR = mkLeg( 0.10);
 
   // Eyes sit on the skull-to-snout transition.
   addEyes(group, eyeMat, glowMat, { y: 1.22, forward: 0.14, spread: 0.07 });
 
-  return finalize(group, cfg, bodyMat, eyeMat, glowMat);
+  return finalize(group, cfg, bodyMat, eyeMat, glowMat, {
+    torso: body, skull, legL, legR,
+  });
 }
 
 // ── Brute ────────────────────────────────────────────────────────────────
@@ -320,7 +339,9 @@ function buildBrute(faction, cfg) {
 
   addEyes(group, eyeMat, glowMat, { y: 1.40, forward: 0.22, spread: 0.11 });
 
-  return finalize(group, cfg, bodyMat, eyeMat, glowMat);
+  return finalize(group, cfg, bodyMat, eyeMat, glowMat, {
+    torso: body, skull, armL, armR, legL, legR,
+  });
 }
 
 // ── Stalker ──────────────────────────────────────────────────────────────
@@ -423,7 +444,11 @@ function buildStalker(faction, cfg) {
   extraGlow.position.set(0, 1.04, 0.26);
   group.add(extraGlow);
 
-  return finalize(group, cfg, bodyMat, eyeMat, glowMat);
+  return finalize(group, cfg, bodyMat, eyeMat, glowMat, {
+    // Stalker's arms are multi-segment with no single root; skip them for
+    // the cheap animator. Thorax is the "torso" the bob rides.
+    torso: thorax, skull, legL, legR,
+  });
 }
 
 // ── Giant ────────────────────────────────────────────────────────────────
@@ -553,7 +578,9 @@ function buildGiant(faction, cfg) {
 
   addEyes(group, eyeMat, glowMat, { y: 1.62, forward: 0.28, spread: 0.13 });
 
-  return finalize(group, cfg, bodyMat, eyeMat, glowMat);
+  return finalize(group, cfg, bodyMat, eyeMat, glowMat, {
+    torso: body, skull, armL, armR, legL, legR,
+  });
 }
 
 export class Skeleton {
@@ -633,6 +660,94 @@ export class Skeleton {
     this._hpBar = createHpBar({ width: 1.0, height: 0.13, yOffset: 1.95 });
     this._hpBar.sprite.scale.multiplyScalar(1 / cfg.scale);
     this.mesh.add(this._hpBar.sprite);
+
+    // Allied aura — flat additive ring at the feet so friend vs. foe reads
+    // at a glance even with a chaotic horde. Hostiles get nothing (their
+    // silhouette + red eyes already distinguish them). The color is a
+    // default green; main.js overrides per-ownership via setAuraColor()
+    // for remote allies so other players' skeletons show up in blue.
+    if (faction === Faction.ALLIED) {
+      const auraGeom = new THREE.RingGeometry(0.55, 0.95, 40);
+      this._auraMat = new THREE.MeshBasicMaterial({
+        color: 0x55ff88,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      this._aura = new THREE.Mesh(auraGeom, this._auraMat);
+      this._aura.rotation.x = -Math.PI / 2;
+      this._aura.position.y = 0.04;
+      // Invert the mesh group's scale so the aura renders at world-size 1
+      // regardless of how big the owning monster group was scaled.
+      this._aura.scale.multiplyScalar(1 / cfg.scale);
+      this.mesh.add(this._aura);
+    }
+  }
+
+  // Per-frame pose animation. Reads the bones table baked into
+  // this.mesh.userData by each type builder; missing bones are skipped
+  // so a type that only exposes torso/skull still gets a decent idle
+  // bob. Phase advances with movement distance so slow-walking monsters
+  // look slow and sprinters look frantic without any global clock.
+  _animateBones(dt, prevX, prevZ) {
+    const bones = this.mesh.userData.bones;
+    if (!bones) return;
+
+    // Walk phase — accumulates proportional to horizontal speed so a
+    // stationary monster breathes (small idle sine on _phaseIdle) and a
+    // moving monster strides (larger step sine).
+    const dist = Math.hypot(this.position.x - prevX, this.position.z - prevZ);
+    const speed = dist / Math.max(dt, 1e-4);
+    this._walkPhase = (this._walkPhase ?? 0) + speed * dt * 5.8;
+    this._idlePhase = (this._idlePhase ?? Math.random() * Math.PI * 2) + dt * 1.6;
+
+    const walkSine = Math.sin(this._walkPhase);
+    const idleSine = Math.sin(this._idlePhase);
+    // Smooth interpolation between idle and stride amplitudes based on
+    // actual movement speed (caps out around 6 u/s to keep giants from
+    // flailing).
+    const mix = Math.max(0, Math.min(1, speed / 6));
+
+    // Torso bob — small vertical offset that peaks at mid-stride.
+    if (bones.torso) {
+      const rest = bones.torso.userData.restY ?? bones.torso.position.y;
+      const bob = idleSine * 0.02 * (1 - mix) + Math.abs(walkSine) * 0.055 * mix;
+      bones.torso.position.y = rest + bob;
+    }
+    if (bones.skull) {
+      // Skull rides the torso bob + tiny counter-nod for weight.
+      const rest = bones.skull.userData.restY ?? bones.skull.position.y;
+      const bob = idleSine * 0.018 * (1 - mix) + Math.abs(walkSine) * 0.05 * mix;
+      bones.skull.position.y = rest + bob;
+      bones.skull.rotation.x = (bones.skull.userData.restRX ?? 0) + walkSine * 0.05 * mix;
+    }
+    // Arms swing opposite to their paired leg. Rotates around local X
+    // so arms rock forward/back from their attach point.
+    if (bones.armL) {
+      const rest = bones.armL.userData.restRX ?? 0;
+      bones.armL.rotation.x = rest + walkSine * 0.55 * mix + idleSine * 0.04 * (1 - mix);
+    }
+    if (bones.armR) {
+      const rest = bones.armR.userData.restRX ?? 0;
+      bones.armR.rotation.x = rest - walkSine * 0.55 * mix - idleSine * 0.04 * (1 - mix);
+    }
+    if (bones.legL) {
+      const rest = bones.legL.userData.restRX ?? 0;
+      bones.legL.rotation.x = rest - walkSine * 0.45 * mix;
+    }
+    if (bones.legR) {
+      const rest = bones.legR.userData.restRX ?? 0;
+      bones.legR.rotation.x = rest + walkSine * 0.45 * mix;
+    }
+  }
+
+  // Owner-tinted aura. main.js calls this right after ownership is
+  // resolved (spawnSkeletonLocal vs. spawnRemoteAlly) so the disc reads
+  // as "your army" (green) vs. "ally player's army" (blue) from a glance.
+  setAuraColor(hex) {
+    if (this._auraMat) this._auraMat.color.setHex(hex);
   }
 
   setHp(current, max) {
@@ -710,6 +825,14 @@ export class Skeleton {
 
     if (this.cooldownTimer > 0) this.cooldownTimer -= dt;
 
+    // Allied aura: slow rotation + gentle breathing opacity so the ring
+    // reads as magical rather than a static decal. Cheap — one read + two
+    // writes per frame, only on ally skeletons (hostiles don't have _aura).
+    if (this._aura) {
+      this._aura.rotation.z += dt * 0.6;
+      this._auraMat.opacity = 0.22 + Math.sin(performance.now() * 0.004) * 0.06;
+    }
+
     const prevX = this.position.x;
     const prevZ = this.position.z;
 
@@ -773,6 +896,8 @@ export class Skeleton {
         );
       }
     }
+
+    this._animateBones(dt, prevX, prevZ);
 
     const mat = this.mesh.userData.bodyMaterial;
     if (mat && mat.emissive) {

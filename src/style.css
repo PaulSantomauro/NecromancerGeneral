@@ -1,3 +1,14 @@
+/* Type system: Cinzel (serif) carries the gothic military identity; used
+   for titles, UI labels, and HUD chrome. Cinzel Decorative is reserved
+   for the marquee "Necromancer General" brand treatment only so it stays
+   special. System sans-serif falls back immediately on first paint and is
+   also used for dense numeric readouts where serifs hurt legibility. */
+:root {
+  --font-brand: 'Cinzel Decorative', 'Cinzel', Georgia, serif;
+  --font-ui:    'Cinzel', Georgia, 'Times New Roman', serif;
+  --font-num:   -apple-system, system-ui, 'Segoe UI', sans-serif;
+}
+
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
@@ -6,11 +17,19 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: #0d0d1a;
-  font-family: -apple-system, system-ui, sans-serif;
+  font-family: var(--font-ui);
   color: #e8e8e8;
   user-select: none;
 }
 canvas { display: block; }
+
+/* Numeric / dense readouts keep sans-serif for legibility. */
+.stat-value, .stat-label, .lb-rank, .lb-stat,
+#hp-current, #hp-max, #energy-current, #energy-max,
+#ammo-cost, #kill-count, #soul-count, #level-count,
+.upgrade-level, .upgrade-cost, .upgrade-hotkey, kbd {
+  font-family: var(--font-num);
+}
 
 #hud {
   position: fixed;
@@ -351,9 +370,10 @@ kbd {
   background: rgba(10, 6, 8, 0.78);
   border: 1px solid rgba(255, 60, 40, 0.4);
   border-radius: 6px;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.8px;
+  letter-spacing: 2px;
   color: #ffcab0;
   text-transform: uppercase;
   display: flex;
@@ -390,12 +410,13 @@ kbd {
   box-shadow: 0 0 80px rgba(255, 200, 80, 0.55);
 }
 #round-overlay-title {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 2px;
+  font-family: var(--font-brand);
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 3px;
   text-transform: uppercase;
   margin-bottom: 10px;
-  text-shadow: 0 0 12px rgba(0, 0, 0, 0.9);
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.9), 0 0 22px rgba(180, 100, 255, 0.3);
 }
 #round-overlay-sub {
   font-size: 14px;
@@ -516,12 +537,18 @@ kbd {
 }
 
 .splash-title {
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: 2.5px;
+  font-family: var(--font-brand);
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: 4px;
   color: #d6a8ff;
-  text-shadow: 0 0 22px rgba(180, 100, 255, 0.55), 0 0 40px rgba(180, 100, 255, 0.3);
+  text-shadow:
+    0 0 22px rgba(180, 100, 255, 0.55),
+    0 0 44px rgba(180, 100, 255, 0.35),
+    0 0 2px rgba(255, 220, 255, 0.35);
+  text-transform: uppercase;
   margin: 0;
+  line-height: 1.1;
 }
 
 .splash-sub {
@@ -1112,8 +1139,11 @@ kbd {
   margin-bottom: 2px;
 }
 #promotion-toast .promo-title {
+  font-family: var(--font-brand);
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
   color: #f2e3ff;
   letter-spacing: 0.6px;
   text-shadow: 0 0 10px rgba(185, 102, 255, 0.6);
@@ -1225,4 +1255,70 @@ kbd {
   color: #c7ffde;
   background: rgba(60, 160, 100, 0.45);
   border-color: rgba(130, 255, 190, 0.5);
+}
+
+/* === First-20-seconds objective banner ============================== */
+/* Sits mid-upper screen, above the player, below the phase banner.
+   Gives new players the whole gameplay loop in one glance. */
+#objective-banner {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-16px);
+  padding: 14px 26px 16px;
+  background: linear-gradient(180deg, rgba(22, 14, 34, 0.94), rgba(12, 8, 20, 0.94));
+  border: 1px solid rgba(200, 140, 255, 0.45);
+  border-radius: 10px;
+  box-shadow:
+    0 8px 32px rgba(80, 20, 160, 0.3),
+    0 0 18px rgba(180, 100, 255, 0.2);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease-out, transform 420ms ease-out;
+  z-index: 120;
+  max-width: min(92vw, 820px);
+}
+#objective-banner.hidden { display: none; }
+#objective-banner.obj-in  { opacity: 1; transform: translateX(-50%) translateY(0); }
+#objective-banner.obj-out { opacity: 0; transform: translateX(-50%) translateY(-16px); }
+
+#objective-banner .obj-title {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: #d6a8ff;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  text-shadow: 0 0 10px rgba(180, 100, 255, 0.5);
+}
+#objective-banner .obj-chain {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px 14px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: #f2e3ff;
+  text-transform: uppercase;
+}
+#objective-banner .obj-step {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+#objective-banner .obj-glyph {
+  font-size: 16px;
+  color: #ffd27a;
+  text-shadow: 0 0 10px rgba(255, 200, 120, 0.6);
+}
+#objective-banner .obj-arrow {
+  color: #8a6cb0;
+  font-weight: 400;
+  font-size: 15px;
 }

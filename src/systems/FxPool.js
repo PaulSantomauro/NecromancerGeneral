@@ -1,11 +1,14 @@
 import * as THREE from 'three';
 
 // Shared short-lived particle emitter. Reuses meshes across emits so steady
-// state has near-zero per-frame allocation. Four particle kinds:
+// state has near-zero per-frame allocation. Five particle kinds:
 //   'spark' — tiny additive sphere, optional gravity
 //   'dust'  — soft grey additive sphere, rises and fades
 //   'bone'  — lit capsule fragment with tumble + gravity (death bursts)
 //   'ring'  — ground-aligned additive disc that expands and fades
+//   'soul'  — additive orb that homes on a live target Vector3 (typically
+//             the player's position), arcs upward on spawn, then seeks
+//             after a short delay. Used for harvest streams on kills.
 //
 // Call FxPool.init(scene) once at boot, FxPool.update(dt) each frame.
 // This module only touches the scene graph via scene.add/remove and its own
@@ -15,12 +18,13 @@ const MAX_ACTIVE = 256;
 
 let _scene = null;
 const _active = [];
-const _free = { spark: [], dust: [], bone: [], ring: [] };
+const _free = { spark: [], dust: [], bone: [], ring: [], soul: [] };
 
 const _sparkGeom = new THREE.SphereGeometry(0.07, 6, 4);
 const _dustGeom  = new THREE.SphereGeometry(0.12, 6, 4);
 const _boneGeom  = new THREE.CapsuleGeometry(0.055, 0.22, 3, 4);
 const _ringGeom  = new THREE.RingGeometry(0.85, 1.0, 32);
+const _soulGeom  = new THREE.SphereGeometry(0.12, 8, 6);
 
 function makeMesh(kind, color) {
   if (kind === 'bone') {
@@ -31,6 +35,7 @@ function makeMesh(kind, color) {
   }
   const geom = kind === 'spark' ? _sparkGeom
              : kind === 'dust'  ? _dustGeom
+             : kind === 'soul'  ? _soulGeom
              :                     _ringGeom;
   const mat = new THREE.MeshBasicMaterial({
     color, transparent: true, opacity: 1,
@@ -95,6 +100,45 @@ export const FxPool = {
     }
   },
 
+  // Harvest stream: spawn `count` additive orbs at `position` with a small
+  // upward/outward pop, then after a brief delay accelerate toward `target`
+  // (which is expected to be a live Vector3 — usually the player's position
+  // — so the stream tracks movement mid-flight). Particles fade out near
+  // the end of their lifetime and despawn early if they reach the target.
+  soulStream({
+    position, target, color = 0xd6a8ff, count = 5,
+    duration = 0.9, spread = 0.6, seek = 14.0,
+  }) {
+    if (!_scene) return;
+    for (let i = 0; i < count; i++) {
+      recycleOldestIfFull();
+      const mesh = acquire('soul', color);
+      const angle = Math.random() * Math.PI * 2;
+      const r = spread * Math.random();
+      mesh.position.set(
+        position.x + Math.cos(angle) * r,
+        position.y + 0.8 + Math.random() * 0.6,
+        position.z + Math.sin(angle) * r,
+      );
+      mesh.scale.setScalar(0.8 + Math.random() * 0.6);
+      _scene.add(mesh);
+      _active.push({
+        kind: 'soul', mesh, target,
+        // Initial pop — small outward + solid upward impulse.
+        vx: Math.cos(angle) * (1.2 + Math.random() * 0.9),
+        vy: 1.8 + Math.random() * 1.6,
+        vz: Math.sin(angle) * (1.2 + Math.random() * 0.9),
+        gravity: false,
+        rotX: 0, rotY: 0, rotZ: 0,
+        age: 0, lifetime: duration,
+        // Stagger the homing start so orbs appear to "lift off" one by one
+        // before committing toward the player.
+        seekDelay: 0.12 + Math.random() * 0.18,
+        seekStrength: seek,
+      });
+    }
+  },
+
   expandingRing({ position, color = 0xffffff, maxRadius = 2.5, duration = 0.35, yOffset = 0.05 }) {
     if (!_scene) return;
     recycleOldestIfFull();
@@ -131,6 +175,34 @@ export const FxPool = {
         const s = p.ringMax * t;
         p.mesh.scale.set(s, s, 1);
         p.mesh.material.opacity = (1 - t) * 0.75;
+        continue;
+      }
+
+      if (p.kind === 'soul') {
+        // Seek toward the live target after seekDelay. Target is expected
+        // to be a Vector3-ish object mutated in place (player.position),
+        // so we just read its x/y/z every frame without copying. Aim at
+        // chest height (+1.4u) so absorbed souls visibly land on the body.
+        if (p.target && p.age > p.seekDelay) {
+          const dx = p.target.x - p.mesh.position.x;
+          const dy = (p.target.y + 1.4) - p.mesh.position.y;
+          const dz = p.target.z - p.mesh.position.z;
+          const d = Math.hypot(dx, dy, dz) || 1;
+          p.vx += (dx / d) * p.seekStrength * dt;
+          p.vy += (dy / d) * p.seekStrength * dt;
+          p.vz += (dz / d) * p.seekStrength * dt;
+          // Critical damping so they don't overshoot past the player.
+          const damp = 0.88;
+          p.vx *= damp; p.vy *= damp; p.vz *= damp;
+          // Close enough → finish early so the tail of a kill batch
+          // doesn't hang around after the player has sprinted off.
+          if (d < 0.6) p.age = p.lifetime;
+        }
+        p.mesh.position.x += p.vx * dt;
+        p.mesh.position.y += p.vy * dt;
+        p.mesh.position.z += p.vz * dt;
+        // Hold opacity through most of the life, fade out in the last 30%.
+        p.mesh.material.opacity = t < 0.7 ? 1 : Math.max(0, (1 - t) / 0.3);
         continue;
       }
 

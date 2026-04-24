@@ -231,13 +231,26 @@ export class HUD {
       this._addKillFeedEntry(textHtml, mine, { asHtml: true });
     });
 
-    events.subscribe(GameEvent.PHASE_TRANSITION, ({ to }) => {
-      if (!this._phaseFlash) return;
-      this._phaseFlash.classList.remove('flash-pvp', 'flash-victory');
-      void this._phaseFlash.offsetWidth;
-      if (to === 'pvp') this._phaseFlash.classList.add('flash-pvp');
-      else if (to === 'ended') this._phaseFlash.classList.add('flash-victory');
+    events.subscribe(GameEvent.PHASE_TRANSITION, ({ to, from }) => {
+      if (this._phaseFlash) {
+        this._phaseFlash.classList.remove('flash-pvp', 'flash-victory');
+        void this._phaseFlash.offsetWidth;
+        if (to === 'pvp') this._phaseFlash.classList.add('flash-pvp');
+        else if (to === 'ended') this._phaseFlash.classList.add('flash-victory');
+      }
+      // Show the objective banner for the first 20s of a fresh PvE round:
+      //   - initial connect (no previous phase)
+      //   - round restart (ended → pve)
+      // Skip mid-session re-entries that weren't a clean round boundary.
+      if (to === 'pve' && (from === null || from === 'ended' || from === 'idle')) {
+        this.showObjectiveBanner();
+      }
     });
+
+    // Objective banner setup. Stays hidden until _showObjectiveBanner
+    // arms it, then fades in, holds 20s, fades out.
+    this.objectiveBanner = document.getElementById('objective-banner');
+    this._objectiveHideTimer = null;
 
     events.subscribe(GameEvent.ENERGY_CHANGED, ({ current, max }) => {
       this._renderEnergy(current, max);
@@ -478,6 +491,22 @@ export class HUD {
       this.captureToast.classList.add('promo-out');
       setTimeout(() => this.captureToast?.classList.add('hidden'), 400);
     }, 2600);
+  }
+
+  // Fade the kill→souls→army→capture→fog objective banner in, hold for
+  // 20s, fade out. Called on PvE entry and on first connect. Re-arming
+  // while it's already visible just resets the 20s hold — no stacking.
+  showObjectiveBanner() {
+    if (!this.objectiveBanner) return;
+    this.objectiveBanner.classList.remove('hidden', 'obj-out');
+    void this.objectiveBanner.offsetWidth;
+    this.objectiveBanner.classList.add('obj-in');
+    if (this._objectiveHideTimer) clearTimeout(this._objectiveHideTimer);
+    this._objectiveHideTimer = setTimeout(() => {
+      this.objectiveBanner.classList.remove('obj-in');
+      this.objectiveBanner.classList.add('obj-out');
+      setTimeout(() => this.objectiveBanner?.classList.add('hidden'), 700);
+    }, 20000);
   }
 
   _showPromotionToast(level, title) {
