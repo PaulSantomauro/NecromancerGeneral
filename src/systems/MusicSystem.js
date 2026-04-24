@@ -2,12 +2,13 @@ import { AudioSystem } from './AudioSystem.js';
 
 // Four-track soundtrack driver.
 //
-// Tracks 1–3 are the "round" tracks — any one of them plays during PvE
-// gameplay. They're shuffled into a queue so the player hears variety across
-// rounds without immediate repeats: once the queue empties the deck is
-// reshuffled. Track 4 is the PvP track; it takes over on the pve → pvp
-// transition and continues through the ended/victory phase until the next
-// round kicks off a fresh round track.
+// Tracks 1 and 2 are the "round" tracks — one plays during PvE gameplay,
+// shuffled into a queue so the player hears variety across rounds without
+// immediate repeats. Track 3 is intentionally excluded from rotation right
+// now (keep the file on disk — flipping it back on is a one-line change).
+// Track 4 is the PvP track; it takes over on the pve → pvp transition and
+// continues through the ended/victory phase until the next round kicks off
+// a fresh round track.
 //
 // Each track is an HTMLAudioElement wired through a per-track gain node into
 // AudioSystem's music bus (see AudioSystem.connectMusic). Crossfades are
@@ -17,7 +18,8 @@ import { AudioSystem } from './AudioSystem.js';
 const ROUND_TRACKS = [
   encodeURI('/audio/Track 1 - Again and Again.mp3'),
   encodeURI('/audio/Track 2 - Go Go Go.mp3'),
-  encodeURI('/audio/Track 3 - Fly Higher and Higher.mp3'),
+  // Track 3 ("Fly Higher and Higher") sidelined — leave the file in
+  // /public/audio so we can re-enable it later without a re-upload.
 ];
 const PVP_TRACK = encodeURI('/audio/Track 4 - Final Reload.mp3');
 
