@@ -340,6 +340,11 @@ function spawnRemoteAlly(ownerId, localId, x, z, tier, maxHp, type) {
   sk.ownerId = ownerId;
   sk.localId = localId;
   sk.friendly = false; // not mine — valid target
+  // Blue aura so teammate minions read at a glance as "another player's
+  // army" vs. my green. Default color set in Skeleton construction is
+  // green; the constructor applies it for ALLIED faction unconditionally,
+  // so the remote path only needs to repaint.
+  sk.setAuraColor(0x5588ff);
   if (typeof maxHp === 'number') {
     sk.stats.maxHp = maxHp;
     sk.stats.hp = maxHp;
@@ -385,6 +390,22 @@ events.subscribe(GameEvent.ENEMY_CONVERTED, ({ skeleton }) => {
 events.subscribe(GameEvent.ENEMY_DIED, ({ skeleton, cause }) => {
   if (!skeleton) return;
   if (skeleton.faction !== Faction.HOSTILE) return;
+  // Soul harvest visual — fires for every hostile kill regardless of cause.
+  // Using skeleton.soulValue to scale the stream's orb count makes a giant
+  // pour more souls into the player than a skeleton, reinforcing the
+  // class/reward hierarchy via the VFX itself. Fog deaths still get the
+  // stream — their souls reach nobody in particular, but the corpse should
+  // still visibly give up something. Target is player.position by
+  // reference, so the orbs track the player if they're moving.
+  const soulCount = Math.max(3, Math.min(12, (skeleton.soulValue ?? 1) * 2));
+  FxPool.soulStream({
+    position: skeleton.position,
+    target: player.position,
+    color: 0xd6a8ff,
+    count: soulCount,
+    duration: 0.9 + Math.min(0.4, (skeleton.soulValue ?? 1) * 0.08),
+  });
+
   // Environmental deaths (fog) don't belong to the player — they weren't
   // earned by the player or their allies, so no kill credit and no soul
   // bounty. The hostile still fires its own death visual via ENEMY_DIED;

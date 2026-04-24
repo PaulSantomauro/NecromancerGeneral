@@ -633,6 +633,37 @@ export class Skeleton {
     this._hpBar = createHpBar({ width: 1.0, height: 0.13, yOffset: 1.95 });
     this._hpBar.sprite.scale.multiplyScalar(1 / cfg.scale);
     this.mesh.add(this._hpBar.sprite);
+
+    // Allied aura — flat additive ring at the feet so friend vs. foe reads
+    // at a glance even with a chaotic horde. Hostiles get nothing (their
+    // silhouette + red eyes already distinguish them). The color is a
+    // default green; main.js overrides per-ownership via setAuraColor()
+    // for remote allies so other players' skeletons show up in blue.
+    if (faction === Faction.ALLIED) {
+      const auraGeom = new THREE.RingGeometry(0.55, 0.95, 40);
+      this._auraMat = new THREE.MeshBasicMaterial({
+        color: 0x55ff88,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      this._aura = new THREE.Mesh(auraGeom, this._auraMat);
+      this._aura.rotation.x = -Math.PI / 2;
+      this._aura.position.y = 0.04;
+      // Invert the mesh group's scale so the aura renders at world-size 1
+      // regardless of how big the owning monster group was scaled.
+      this._aura.scale.multiplyScalar(1 / cfg.scale);
+      this.mesh.add(this._aura);
+    }
+  }
+
+  // Owner-tinted aura. main.js calls this right after ownership is
+  // resolved (spawnSkeletonLocal vs. spawnRemoteAlly) so the disc reads
+  // as "your army" (green) vs. "ally player's army" (blue) from a glance.
+  setAuraColor(hex) {
+    if (this._auraMat) this._auraMat.color.setHex(hex);
   }
 
   setHp(current, max) {
@@ -709,6 +740,14 @@ export class Skeleton {
     }
 
     if (this.cooldownTimer > 0) this.cooldownTimer -= dt;
+
+    // Allied aura: slow rotation + gentle breathing opacity so the ring
+    // reads as magical rather than a static decal. Cheap — one read + two
+    // writes per frame, only on ally skeletons (hostiles don't have _aura).
+    if (this._aura) {
+      this._aura.rotation.z += dt * 0.6;
+      this._auraMat.opacity = 0.22 + Math.sin(performance.now() * 0.004) * 0.06;
+    }
 
     const prevX = this.position.x;
     const prevZ = this.position.z;
