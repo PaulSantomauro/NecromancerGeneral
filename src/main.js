@@ -20,6 +20,7 @@ import { GameEvent, events } from './systems/EventSystem.js';
 import battleConfig from './config/battle.json';
 import { wrapPosition, closestWrap, toroidalDelta } from './systems/Toroid.js';
 import { FxPool } from './systems/FxPool.js';
+import { PostFX } from './systems/PostFX.js';
 import { ScreenShake } from './systems/ScreenShake.js';
 import { PortalSystem } from './systems/PortalSystem.js';
 import { AudioSystem } from './systems/AudioSystem.js';
@@ -52,10 +53,19 @@ camera.position.set(
   battleConfig.playerSpawnPoint[2],
 );
 
+// Post-processing: bloom on highlight pixels (eyes / muzzle / portals /
+// soul streams / fog wall) + a cool-shadow / warm-highlight grade.
+// Initial quality follows a URL hint so a tester can flip down to 'light'
+// or 'off' without a rebuild (?fx=light / ?fx=off). Defaults to full.
+const _fxParam = new URLSearchParams(window.location.search).get('fx');
+const _initialFx = (_fxParam === 'light' || _fxParam === 'off') ? _fxParam : 'full';
+PostFX.init(renderer, scene, camera, { quality: _initialFx });
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  PostFX.onResize(window.innerWidth, window.innerHeight);
 });
 
 // ── World state ────────────────────────────────────────────────────────────
@@ -1212,6 +1222,10 @@ function animate() {
   // so there's no drift compensation needed.
   ScreenShake.apply(player.controls.getObject(), dt);
 
-  renderer.render(scene, camera);
+  // PostFX wraps renderer.render when quality is 'full' or 'light', and
+  // falls back to the raw renderer path when 'off'. ScreenShake mutated
+  // the camera above, so by the time we render here the shake offset is
+  // already baked into the projection.
+  PostFX.render();
 }
 animate();
