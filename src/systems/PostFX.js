@@ -26,12 +26,12 @@ const COLOR_GRADE_SHADER = {
     uShadowHue: { value: new THREE.Color(0x2a2450) }, // cool violet shadow tint
     uMidHue:    { value: new THREE.Color(0xa08060) }, // warm mid-tone
     uHiHue:     { value: new THREE.Color(0xffe0a0) }, // warm highlight boost
-    uShadowWt:  { value: 0.12 },
-    uMidWt:     { value: 0.05 },
-    uHiWt:      { value: 0.10 },
-    uSaturation:{ value: 1.06 },
-    uContrast:  { value: 1.04 },
-    uVignette:  { value: 0.35 },
+    uShadowWt:  { value: 0.05 },
+    uMidWt:     { value: 0.04 },
+    uHiWt:      { value: 0.08 },
+    uSaturation:{ value: 1.05 },
+    uContrast:  { value: 1.02 },
+    uVignette:  { value: 0.16 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -122,9 +122,10 @@ class _PostFX {
       // mid-gray surface.
       this._bloom = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.55, // strength
-        0.9,  // radius
-        0.72, // threshold
+        0.45, // strength — softer pass, paired with brighter scene lights
+        0.85, // radius
+        0.82, // threshold — only genuinely hot pixels (eyes, muzzle,
+              // soul orbs, portal cores) bloom; mid-tones don't bleed
       );
       composer.addPass(this._bloom);
     }
