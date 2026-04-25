@@ -13,8 +13,6 @@
     { "center": [120, 0, 0], "radius": 13, "label": "Eastern Reach" },
     { "center": [-90, 0, 100], "radius": 12, "label": "SW Crypt" },
     { "center": [90, 0, 100], "radius": 12, "label": "SE Crypt" },
-    { "center": [-125, 0, -120], "radius": 12, "label": "NW Reach" },
-    { "center": [125, 0, -120], "radius": 12, "label": "NE Reach" },
     { "center": [0, 0, -60], "radius": 10, "label": "Northern Sanctum" },
     { "center": [60, 0, 0], "radius": 10, "label": "Eastern Watch" },
     { "center": [0, 0, 60], "radius": 10, "label": "Southern Bastion" },

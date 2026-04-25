@@ -1,4 +1,9 @@
+import * as THREE from 'three';
 import battleConfig from '../config/battle.json';
+
+// Reused vector for the player-arrow direction read each frame so we
+// don't allocate a fresh Vector3 per redraw.
+const _fwd = new THREE.Vector3();
 
 const WORLD_SIZE = battleConfig.worldSize ?? 300;
 const HALF = WORLD_SIZE / 2;
@@ -135,20 +140,24 @@ export class Minimap {
       }
     }
 
-    // Local player — triangle pointing in facing direction. Three.js
-    // camera looks down -Z at yaw=0; world forward = (-sin(yaw), 0,
-    // -cos(yaw)). Map that to canvas-space (+x east, +y south) and the
-    // forward unit vector becomes (-sin(yaw), -cos(yaw)). Drawing a
-    // tip + two trailing wings gives a clear arrowhead.
-    const px = this.player.position.x;
-    const pz = this.player.position.z;
-    const yaw = this.player.controls.getObject().rotation.y;
-    const pp = this._toMap(px, pz);
-
-    const fwdX = -Math.sin(yaw);
-    const fwdY = -Math.cos(yaw);
+    // Local player — triangle pointing in facing direction. Read the
+    // forward direction from the camera's quaternion via
+    // getWorldDirection(): PointerLockControls writes the camera
+    // quaternion from a 'YXZ' Euler, so reading camera.rotation.y back
+    // (default 'XYZ' order) gives the wrong yaw whenever pitch is
+    // non-zero. The world-direction projection is order-agnostic.
+    // Project out pitch by normalizing the (x, z) horizontal slice so
+    // the arrow length stays stable when looking up/down.
+    const camera = this.player.controls.getObject();
+    camera.getWorldDirection(_fwd);
+    const horizLen = Math.hypot(_fwd.x, _fwd.z) || 1;
+    // World +X → canvas +x (east), world +Z → canvas +y (south).
+    const fwdX = _fwd.x / horizLen;
+    const fwdY = _fwd.z / horizLen;
     const perpX = -fwdY;
     const perpY = fwdX;
+
+    const pp = this._toMap(this.player.position.x, this.player.position.z);
     const tipLen = 7;
     const tailLen = 3;
     const halfWide = 4;
