@@ -791,10 +791,25 @@ io.on('connection', (socket) => {
     participantsThisRnd.add(playerId);
     checkPromotion(playerId, p.name);
 
+    // Capture soul bounty — small spendable reward layered on top of the
+    // career XP so the capture also feels good in the round economy
+    // (more allies / upgrades / ammo). Goes through the normal soul path
+    // so souls_granted broadcasts and the client's HUD reconciles
+    // automatically. Per-round soul tally is bumped too so the
+    // best_round_souls record can include this.
+    const ZONE_SOUL_BOUNTY = 10;
+    p.souls += ZONE_SOUL_BOUNTY;
+    db.updateSoulsAbs.run(p.souls, playerId);
+    roundSoulsByPid.set(playerId, (roundSoulsByPid.get(playerId) ?? 0) + ZONE_SOUL_BOUNTY);
+    io.to(ROOM).emit('souls_granted', {
+      playerId, amount: ZONE_SOUL_BOUNTY, total: p.souls,
+    });
+
     io.to(ROOM).emit('zone_captured', {
       zoneIndex: idx,
       capturedBy: playerId,
       name: p.name,
+      souls: ZONE_SOUL_BOUNTY,
       t: Date.now(),
     });
     console.log(`[capture] ${p.name} captured zone #${idx} "${zone.label}"`);
