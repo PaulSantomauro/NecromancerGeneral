@@ -93,28 +93,30 @@ export class Player {
     // Muzzle point-light. Pre-bloom this needed to be cranked (intensity
     // ~9) to fake a flash; with PostFX bloom now amplifying bright pixels
     // for real, that read as a screen-eating flare on a fast-firing
-    // weapon. Halved.
+    // weapon. Keep it gentle — the visual flash is the sprite, the light
+    // just rims nearby geometry.
     this._muzzleFlash = new THREE.PointLight(0xffd060, 0, 14, 2);
     this._muzzleFlash.position.set(0.18, -0.1, -0.55);
     camera.add(this._muzzleFlash);
     this._muzzleTimer = 0;
 
-    // Additive sprite anchored at the muzzle. Scale-pulses and fades each
-    // fire. Camera-relative so it always faces the viewer correctly.
-    // Tuned tighter post-bloom so the flash doesn't dominate the screen
-    // every fireInterval — bloom's afterglow now does the "feels punchy"
-    // heavy lifting that opacity used to.
+    // Additive sprite anchored at the muzzle. The sprite sits ~0.56u in
+    // front of a 75° FOV camera, so a scale of 0.30 already covers ~30°
+    // of vertical screen — way too big. Tuned tiny here, paired with a
+    // peak opacity (0.30) below PostFX's bloom threshold (0.82) so its
+    // hot center stays unbloomed and contained. The result reads as a
+    // pinpoint flash beside the muzzle instead of a screen-fill.
     this._muzzleSpriteMat = new THREE.SpriteMaterial({
       map: getMuzzleTexture(), color: 0xffd060, transparent: true, opacity: 0,
       depthWrite: false, depthTest: false,
       blending: THREE.AdditiveBlending, fog: false,
     });
     this._muzzleSprite = new THREE.Sprite(this._muzzleSpriteMat);
-    this._muzzleSprite.scale.set(0.30, 0.30, 1);
+    this._muzzleSprite.scale.set(0.10, 0.10, 1);
     this._muzzleSprite.position.set(0.18, -0.1, -0.56);
     camera.add(this._muzzleSprite);
     this._muzzleSpriteTimer = 0;
-    this._muzzleSpriteLife = 0.06;
+    this._muzzleSpriteLife = 0.05;
 
     this._bindInput(domElement);
   }
@@ -235,7 +237,7 @@ export class Player {
 
     if (this._muzzleTimer > 0) {
       this._muzzleTimer = Math.max(0, this._muzzleTimer - dt);
-      this._muzzleFlash.intensity = (this._muzzleTimer / 0.06) * 4;
+      this._muzzleFlash.intensity = (this._muzzleTimer / 0.06) * 1.5;
     } else {
       this._muzzleFlash.intensity = 0;
     }
@@ -244,8 +246,11 @@ export class Player {
       this._muzzleSpriteTimer = Math.max(0, this._muzzleSpriteTimer - dt);
       const k = this._muzzleSpriteTimer / this._muzzleSpriteLife; // 1 → 0
       const pulse = Math.sin((1 - k) * Math.PI);
-      this._muzzleSpriteMat.opacity = pulse * 0.55;
-      const s = 0.25 + pulse * 0.35;
+      // Peak opacity capped under PostFX bloom threshold so the sprite's
+      // hot center pixel doesn't trigger the bloom kernel — contained
+      // flash instead of a glow that bleeds across the screen.
+      this._muzzleSpriteMat.opacity = pulse * 0.30;
+      const s = 0.08 + pulse * 0.10;
       this._muzzleSprite.scale.set(s, s, 1);
     } else if (this._muzzleSpriteMat.opacity !== 0) {
       this._muzzleSpriteMat.opacity = 0;
