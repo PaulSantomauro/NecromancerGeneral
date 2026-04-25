@@ -107,7 +107,7 @@ export class HUD {
     events.subscribe(GameEvent.ZONE_CAPTURE_ENDED, () => {
       if (this.captureIndicator) this.captureIndicator.classList.add('hidden');
     });
-    events.subscribe(GameEvent.NET_ZONE_CAPTURED, ({ capturedBy, name, zoneIndex }) => {
+    events.subscribe(GameEvent.NET_ZONE_CAPTURED, ({ capturedBy, name, zoneIndex, souls }) => {
       // Hide the in-progress bar if this was our zone (server just
       // confirmed what we optimistically locked in).
       if (this.captureIndicator) this.captureIndicator.classList.add('hidden');
@@ -119,8 +119,11 @@ export class HUD {
         mine,
         { asHtml: true },
       );
-      // Brief toast for the capturer only — the +500 XP is worth celebrating.
-      if (mine) this._showCaptureToast(zoneIndex);
+      // Brief toast for the capturer only — the +500 XP and +N souls
+      // are worth celebrating. `souls` comes from the server payload so
+      // the bounty stays single-sourced (server constant, not duplicated
+      // in client code).
+      if (mine) this._showCaptureToast(souls ?? 0);
     });
 
     // Listen for the server's round summary (delivered at endRound to each
@@ -474,13 +477,19 @@ export class HUD {
   // already refreshed by the time this fires, so any kill feed / round-
   // end leaderboard that renders afterward picks up the new title without
   // needing a signal from here.
-  // Briefly flash the "Zone captured +500 XP" banner. Uses the same
-  // slide-in/out animation pattern as the promotion toast for consistency.
-  _showCaptureToast() {
+  // Briefly flash the "Zone captured +500 XP · +N ☠" banner. Uses the
+  // same slide-in/out animation pattern as the promotion toast for
+  // consistency. Soul bounty is sourced from the server payload so the
+  // amount stays single-sourced (server constant, not duplicated here).
+  _showCaptureToast(souls = 0) {
     if (!this.captureToast) return;
     const titleEl = this.captureToast.querySelector('.cap-toast-title');
     const subEl   = this.captureToast.querySelector('.cap-toast-sub');
-    if (titleEl) titleEl.textContent = '+500 XP';
+    if (titleEl) {
+      titleEl.textContent = souls > 0
+        ? `+500 XP · +${souls} ☠`
+        : '+500 XP';
+    }
     if (subEl)   subEl.textContent   = 'Spawn zone neutralized.';
     this.captureToast.classList.remove('hidden', 'promo-out');
     void this.captureToast.offsetWidth;
