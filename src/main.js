@@ -480,6 +480,16 @@ function onServerReady(data) {
   if (data.player.pos) {
     player.position.set(data.player.pos.x, 0, data.player.pos.z);
     player.controls.getObject().position.set(data.player.pos.x, 1.7, data.player.pos.z);
+    // Re-aim the camera at origin from this freshly-set spawn position
+    // so spectator-drift accumulated during death doesn't carry over and
+    // so the player's first frame post-respawn faces inward into the
+    // arena. We do the same reset in onRoundRestarted but at THAT point
+    // the position is still the death spot — the yaw computed here is
+    // the authoritative one. The portal-arrival path below overrides
+    // rotation_y if the URL supplied one, which is intentional.
+    const camObj = player.controls.getObject();
+    const yawToOrigin = Math.atan2(-camObj.position.x, -camObj.position.z);
+    camObj.rotation.set(0, yawToOrigin, 0);
   }
 
   if (!battleDirector._seeded) {
@@ -941,6 +951,19 @@ function onRoundRestarted() {
   const sp = battleConfig.playerSpawnPoint;
   player.position.set(sp[0], 0, sp[2]);
   player.controls.getObject().position.set(sp[0], 1.7, sp[2]);
+
+  // Reset camera rotation so any spectator drift (mouse pitch/yaw while
+  // pointer-locked through death + the death-state yaw orbit) doesn't
+  // carry into the fresh round. Pitch goes level (rotation.x = 0); yaw
+  // points inward toward origin so the freshly-respawned player faces
+  // the battlefield from the outer spawn ring rather than out into fog.
+  // Welcome's restore_state will overwrite position again with the
+  // server's authoritative spawn point in a moment, so we recompute yaw
+  // there too — see onServerReady's _resetCameraFacing call below.
+  const camObj = player.controls.getObject();
+  const yawToOrigin = Math.atan2(-camObj.position.x, -camObj.position.z);
+  camObj.rotation.set(0, yawToOrigin, 0);
+
   _playerDeathReported = false;
   localKills = 0;
   nextLocalAllyId = 1;
