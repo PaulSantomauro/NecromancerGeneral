@@ -435,18 +435,24 @@ export class Battlefield {
   }
 
   _buildLights(scene) {
-    const hemi = new THREE.HemisphereLight(0xffc888, 0x181015, 0.65);
+    // Brightened pass — pre-PostFX the scene leaned darker because there
+    // was no bloom-derived ambient lift. With the composer chain in
+    // place the world was reading as gloomy/oppressive instead of
+    // atmospheric, so hemi/ambient are bumped to put more readable light
+    // on terrain and skeletons. Key/rim hold their direction so the
+    // sunset-hellscape silhouette still reads.
+    const hemi = new THREE.HemisphereLight(0xffd0a0, 0x281820, 0.95);
     scene.add(hemi);
 
-    const key = new THREE.DirectionalLight(0xff9955, 1.3);
+    const key = new THREE.DirectionalLight(0xffaa66, 1.4);
     key.position.set(-50, 60, -40);
     scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x5577bb, 0.4);
+    const rim = new THREE.DirectionalLight(0x6688cc, 0.55);
     rim.position.set(50, 30, 50);
     scene.add(rim);
 
-    const ambient = new THREE.AmbientLight(0x2a1820, 0.55);
+    const ambient = new THREE.AmbientLight(0x4a3040, 0.95);
     scene.add(ambient);
   }
 
