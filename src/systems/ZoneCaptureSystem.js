@@ -13,9 +13,18 @@ const CAPTURE_SECONDS = 10;
 // No partial-progress broadcast: other players only see a zone flip
 // when it actually captures. Kept deliberately simple per spec.
 export class ZoneCaptureSystem {
-  constructor({ net, player }) {
+  constructor({ net, player, battlefield = null }) {
     this.net = net;
     this.player = player;
+    // Battlefield reference is late-bound via main.js (constructed in the
+    // same system-wiring block) so the ZoneCaptureSystem can lock the
+    // ring visual to green on the OPTIMISTIC local-flip frame — without
+    // this, the frame between local timer hitting 10s and the server
+    // echo sees the ring lerp briefly back to red (captureProgress is
+    // cleared in that window by the ZONE_CAPTURE_ENDED handler because
+    // r.captured is still false until the echo arrives). Idempotent
+    // with the server-triggered setZoneCaptured that fires ~1 RTT later.
+    this.battlefield = battlefield;
     this.zones = battleConfig.hostileSpawnZones ?? [];
 
     // Per-zone local timer state. Parallel array to `zones` — index i
@@ -119,8 +128,20 @@ export class ZoneCaptureSystem {
       // Optimistic local flip so the Battlefield can recolor immediately
       // instead of waiting for the server echo. The authoritative
       // NET_ZONE_CAPTURED event will redundantly mark it again — both
-      // paths are idempotent via the Set.
+      // paths are idempotent via the Set and via setZoneCaptured's
+      // early-return on already-captured rings.
       this.capturedZones.add(inside);
+      // Lock the ring to green NOW, in the same frame we added to the
+      // local captured set. Otherwise the very next frame sees inside=-1
+      // (this zone gets skipped in the scan), emits ZONE_CAPTURE_ENDED
+      // for this zone, and main.js's handler calls
+      // clearZoneCaptureProgress — which resets captureProgress to 0
+      // because r.captured is still false until the server echo lands.
+      // The result is a visible red flash between local flip and server
+      // confirmation. setZoneCaptured sets r.captured=true, which makes
+      // the follow-up clearZoneCaptureProgress a no-op (guarded) and
+      // the per-frame color lerp skipped entirely.
+      this.battlefield?.setZoneCaptured?.(inside);
     }
   }
 

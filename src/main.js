@@ -276,7 +276,11 @@ const battleDirector = new BattleDirector({
 const progression = new ProgressionSystem({ playerStats });
 const career = new CareerSystem();
 // Network-dependent; wired after `net` is constructed further below.
-const zoneCapture = new ZoneCaptureSystem({ net: null, player });
+// Battlefield is constructed earlier in this file; we pass it here so
+// ZoneCaptureSystem can flip rings to green on the optimistic local
+// capture frame, eliminating the red-flash between local confirmation
+// and the server's zone_captured echo.
+const zoneCapture = new ZoneCaptureSystem({ net: null, player, battlefield });
 battleDirector.progression = progression;
 battleDirector.zoneCapture = zoneCapture;
 player.progression = progression;
