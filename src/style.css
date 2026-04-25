@@ -1322,3 +1322,23 @@ kbd {
   font-weight: 400;
   font-size: 15px;
 }
+
+/* === Minimap (top-right, below stats) =============================== */
+#minimap {
+  position: absolute;
+  top: 130px;
+  right: 20px;
+  width: 160px;
+  height: 160px;
+  border: 1px solid rgba(180, 140, 200, 0.35);
+  border-radius: 6px;
+  background: rgba(8, 6, 14, 0.78);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  pointer-events: none;
+  /* Crisp pixel edges where geometry meets pixel grid; the JS draws
+     fog rings + zone discs, both of which look softer with smoothing
+     turned off when canvas is downscaled. */
+  image-rendering: -webkit-optimize-contrast;
+}

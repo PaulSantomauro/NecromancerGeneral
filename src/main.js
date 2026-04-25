@@ -15,6 +15,7 @@ import { NetworkSystem } from './systems/NetworkSystem.js';
 import { Projectile } from './entities/Projectile.js';
 import ammoConfig from './config/ammo.json';
 import { HUD } from './ui/HUD.js';
+import { Minimap } from './ui/Minimap.js';
 import { SplashScreen } from './ui/SplashScreen.js';
 import { GameEvent, events } from './systems/EventSystem.js';
 import battleConfig from './config/battle.json';
@@ -281,6 +282,18 @@ battleDirector.zoneCapture = zoneCapture;
 player.progression = progression;
 
 const hud = new HUD({ playerStats, progression, roundState, career });
+
+// Minimap — top-right canvas. Pulls live state each frame (player pos,
+// fog radius, captured zones, remote generals). myId resolution is
+// deferred via getter because it isn't known until the splash submits.
+const minimap = new Minimap({
+  canvas: document.getElementById('minimap'),
+  player,
+  roundState,
+  zoneCapture,
+  remoteGenerals,
+  getMyId: () => myId,
+});
 
 // Hide lock prompt until welcome/restore
 const lockPrompt = document.getElementById('lock-prompt');
@@ -1169,6 +1182,7 @@ function animate() {
   }
 
   hud.tickRound(dt);
+  minimap.update();
 
   // Spectator camera: once the local general is dead, slowly orbit the yaw
   // so the view doesn't feel frozen. If a winner is known and still on the
