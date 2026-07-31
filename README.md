@@ -2,9 +2,11 @@
 
 Persistent-battlefield multiplayer: summon armies, convert the fallen, outlast the fog.
 
-> **Play:** <https://necromancer.paulsantomauro.com>
+> **Archived.** Vibe Jam 2026 entry; the hosting was decommissioned on 2026-07-31 and
+> `necromancer.paulsantomauro.com` no longer resolves. The game still runs locally — see
+> [Local development](#local-development).
 
-Vibe Jam 2026 entry. Three.js + Socket.io, Vite client, Node server, AWS-native hosting.
+Three.js + Socket.io, Vite client, Node server, AWS-native hosting.
 
 ## Architecture
 
@@ -31,21 +33,25 @@ npm run dev         # node --watch index.js, listens on :2567
 
 The client reads `VITE_WS_URL` to find the server (defaults to `http://localhost:2567`). `.env.local` can point at a LAN IP for multi-device testing.
 
-## Production
+## Production (decommissioned)
+
+While the jam ran, this was deployed on AWS:
 
 - Client: `https://necromancer.paulsantomauro.com` (S3 + CloudFront, Route53 alias).
-- Server: `wss://api.necromancer.paulsantomauro.com` (EC2 + nginx + WSS).
-- Deploys are automated via GitHub Actions on push to `main`:
-  - `src/**` / `index.html` / `vite.config.js` → rebuilds client, syncs to S3, invalidates CloudFront.
-  - `server/**` → SSM SendCommand pulls + restarts the service on EC2.
-- Infra is CDK (TypeScript) under [`infra/`](./infra). See [`infra/README.md`](./infra/README.md) for deploy commands.
+- Server: `wss://api.necromancer.paulsantomauro.com` (EC2 `t4g.nano` + nginx + WSS).
+- Deploys were automated via GitHub Actions on push to `main` — client rebuild + S3 sync +
+  CloudFront invalidation, and an SSM SendCommand pull/restart for the server.
+
+All of it was torn down on 2026-07-31: stacks destroyed, DNS records removed, the site bucket
+deleted, and the SQLite world (careers and leaderboard) discarded with the instance. The CDK app
+under [`infra/`](./infra) is kept as the reproducible record — `npx cdk deploy --all` stands the
+whole thing back up. See [`infra/README.md`](./infra/README.md).
 
 ## Repo layout
 
 ```
 src/             Client (Vite + Three.js)
 server/          Node/Socket.io server
-infra/           AWS CDK app (frontend, server, OIDC stacks)
-.github/workflows/  GitHub Actions deploy pipelines
+infra/           AWS CDK app (frontend, server, OIDC stacks) — not currently deployed
 src/config/*.json   Data-driven tuning (ammo, monsters, battle, round, player)
 ```
